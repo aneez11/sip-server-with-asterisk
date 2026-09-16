@@ -1,0 +1,23 @@
+{
+  "name": "infinity-echo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Institute SIP broadcast paging console — Node.js + TypeScript (web + api + shared)",
+  "workspaces": [
+    "shared",
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w shared && npm run build -w api && npm run build -w web",
+    "dev:api": "npm run dev -w api",
+    "dev:web": "npm run dev -w web",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w api && npm run typecheck -w web"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@radix-ui/react-progress": "^1.1.16"
+  }
+}

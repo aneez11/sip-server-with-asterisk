@@ -1,0 +1,85 @@
+# Infinity Echo — self-contained SIP broadcast paging console.
+# Runs its own Asterisk + MySQL + API on a pinned 172.30.0.0/24 network (the
+# asterisk-config templates reference that subnet for AMI permit + RTP).
+#
+# All config and data live inside this project:
+#   ./asterisk-config   -> mounted into the Asterisk + API containers
+#   ./announcements     -> shared WAV store (also mounted in Asterisk)
+
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql://root:${DB_ROOT_PASSWORD}@mysql:3306/infinity_echo
+      AMI_HOST: asterisk
+      AMI_PORT: 5038
+      # Docker host LAN IP — shown to users as the SIP server address in the
+      # device config guide (same HOST_IP the Asterisk container renders).
+      HOST_IP: ${HOST_IP:?HOST_IP is required in .env}
+      ASTERISK_ENDPOINTS_CONF_PATH: /etc/asterisk/endpoints.conf
+      ANNOUNCEMENTS_DIR: /announcements
+      WEB_DIST: /app/web/dist
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./asterisk-config:/etc/asterisk
+      - ./announcements:/announcements
+    depends_on:
+      mysql:
+        condition: service_healthy
+      asterisk:
+        condition: service_started
+    restart: unless-stopped
+    # Pinned so the [operator-ua-identify] match (172.30.0.4/32) in pjsip.conf
+    # stays valid across restarts/redeploys.
+    networks:
+      default:
+        ipv4_address: 172.30.0.4
+
+  asterisk:
+    build:
+      context: .
+      dockerfile: docker/asterisk/Dockerfile
+    environment:
+      # Docker host's LAN IP — rendered into pjsip.conf (external_media_address
+      # + media_address) by the entrypoint. Must match the host IP that phones
+      # and speakers use to reach this server.
+      HOST_IP: ${HOST_IP:?HOST_IP is required in .env}
+      # Shared secret the PA AGI script uses to call the API's PA-trigger route.
+      PA_API_SECRET: ${PA_TRIGGER_SECRET:?PA_TRIGGER_SECRET is required in .env}
+      # Where the AGI script finds the API on the bridge network; "api" is the
+      # compose service name.
+      PA_API_BASE: http://api:3001
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "10000-10100:10000-10100/udp"
+    volumes:
+      - ./asterisk-config:/etc/asterisk
+      - ./announcements:/announcements
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: infinity_echo
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - infinity-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  infinity-mysql:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

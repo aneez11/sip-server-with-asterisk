@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime @default(now())
+}
+
+model Endpoint {
+  id          Int          @id @default(autoincrement())
+  extension   String       @unique
+  label       String
+  location    String       @default("")
+  type        String // phone | speaker
+  isActive    Boolean      @default(true)
+  sipPassword String
+  userAgent   String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  zones       ZoneMember[]
+  paGroupsAsInitiator PaGroup[] @relation("PaInitiator")
+  paGroupsAsReceiver  PaGroupReceiver[]
+}
+
+model Zone {
+  id                   Int          @id @default(autoincrement())
+  name                 String       @unique
+  beep                 Boolean      @default(true)
+  volume               Int?
+  announcementId       Int?
+  autoAnswerProfileId  Int?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  members              ZoneMember[]
+}
+
+model AutoAnswerProfile {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  userAgentMatch String?
+  alertInfo      String?
+  callInfo       String?
+  sipUri         String?
+  dTime          Int?
+  dialOptions    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ZoneMember {
+  zoneId     Int
+  endpointId Int
+  zone       Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  endpoint   Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@id([zoneId, endpointId])
+}
+
+model BroadcastLog {
+  id          Int       @id @default(autoincrement())
+  status      String // pending | success | partial | failed
+  zoneId      Int?
+  endpointIds Json
+  title       String    @default("")
+  durationSec Float?    // expected playback length (from the announcement)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model Announcement {
+  id           Int      @id @default(autoincrement())
+  name         String
+  filename     String
+  originalName String
+  originalFile String   @default("")
+  fileSize     Int
+  duration     Float?   // seconds of the normalized WAV (for progress bars)
+  flash        Boolean  @default(false)
+  music        Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  paGroupsAsStart PaGroup[] @relation("PaStart")
+  paGroupsAsEnd   PaGroup[] @relation("PaEnd")
+}
+
+model EndpointCodecLog {
+  id               Int      @id @default(autoincrement())
+  endpointId       Int?
+  extension        String   @default("")
+  endpointModel    String   @default("")
+  negotiatedCodec  String
+  broadcastId      Int?
+  createdAt        DateTime @default(now())
+
+  @@index([endpointId])
+  @@index([createdAt])
+}
+
+// Initator/Receiver PA group. A user dials `extension` on the initiator device
+// to start a one-to-many announcement to the receiver endpoints. pa_start /
+// pa_end play at the boundaries. Fully static dialplan + dynamic member legs
+// (the receiver list is resolved via the API at trigger time).
+model PaGroup {
+  id                     Int      @id @default(autoincrement())
+  name                   String   @unique
+  extension              String   @unique
+  // Device that may trigger the group (null = any endpoint dialing `extension`).
+  initiatorEndpointId    Int?
+  initiatorEndpoint      Endpoint? @relation("PaInitiator", fields: [initiatorEndpointId], references: [id], onDelete: SetNull)
+  paStartAnnouncementId  Int?
+  paStartAnnouncement    Announcement? @relation("PaStart", fields: [paStartAnnouncementId], references: [id], onDelete: SetNull)
+  paEndAnnouncementId    Int?
+  paEndAnnouncement      Announcement? @relation("PaEnd", fields: [paEndAnnouncementId], references: [id], onDelete: SetNull)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  // Receiver endpoints (the ones that hear the announcement).
+  receivers              PaGroupReceiver[]
+}
+
+// Join table: a PA group's receiver endpoints.
+model PaGroupReceiver {
+  groupId     Int
+  endpointId  Int
+  group       PaGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  endpoint    Endpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  @@id([groupId, endpointId])
+}
+
+// Created by express-mysql-session at runtime (NOT managed by Prisma). Column
+// types mirror the runtime-created table so `prisma db push` doesn't alter it.
+model sessions {
+  session_id String    @id @db.VarChar(128)
+  expires    Int       @db.UnsignedInt
+  data       String?   @db.MediumText
+}
