@@ -7,17 +7,17 @@
 // member legs into a fresh ConfBridge, and returns the conf + audio so the
 // dialplan can bridge the initiator as the marked speaker and play start/end.
 
-import { randomUUID } from 'node:crypto';
-import { prisma } from '../db.js';
-import { config } from '../config.js';
-import type { AmiClient } from '../ami/client.js';
-import type { Server as SocketServer } from 'socket.io';
-import { ApiError } from '../errors.js';
-import { EVENTS } from '@infinity/shared';
-import type { MonitorService } from '../live/monitor.js';
-import type { PaGroup, PaGroupTrigger } from '@infinity/shared';
-import { originateMemberLegs } from '../lib/member-legs.js';
-import { onlineEndpoints } from '../lib/online-endpoints.js';
+import { randomUUID } from "node:crypto";
+import { prisma } from "../db.js";
+import { config } from "../config.js";
+import type { AmiClient } from "../ami/client.js";
+import type { Server as SocketServer } from "socket.io";
+import { ApiError } from "../errors.js";
+import { EVENTS } from "@infinity/shared";
+import type { MonitorService } from "../live/monitor.js";
+import type { PaGroup, PaGroupTrigger } from "@infinity/shared";
+import { originateMemberLegs } from "../lib/member-legs.js";
+import { onlineEndpoints } from "../lib/online-endpoints.js";
 
 export interface PaGroupInput {
   name: string;
@@ -30,7 +30,10 @@ export interface PaGroupInput {
 
 export class PaGroupService {
   /** pageConf -> paEnd info for teardown replay. */
-  private paEndByConf = new Map<string, { paEnd: string | null; logId: number }>();
+  private paEndByConf = new Map<
+    string,
+    { paEnd: string | null; logId: number }
+  >();
 
   constructor(
     private readonly ami: AmiClient,
@@ -41,7 +44,7 @@ export class PaGroupService {
 
   async list(): Promise<PaGroup[]> {
     const groups = await prisma.paGroup.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
       include: {
         initiatorEndpoint: { select: { extension: true, label: true } },
         receivers: true,
@@ -53,9 +56,12 @@ export class PaGroupService {
   async get(id: number): Promise<PaGroup> {
     const g = await prisma.paGroup.findUnique({
       where: { id },
-      include: { initiatorEndpoint: { select: { extension: true, label: true } }, receivers: true },
+      include: {
+        initiatorEndpoint: { select: { extension: true, label: true } },
+        receivers: true,
+      },
     });
-    if (!g) throw new ApiError(404, 'PA group not found');
+    if (!g) throw new ApiError(404, "PA group not found");
     return this.serialize(g);
   }
 
@@ -68,41 +74,68 @@ export class PaGroupService {
         initiatorEndpointId: input.initiatorEndpointId ?? null,
         paStartAnnouncementId: input.paStartAnnouncementId ?? null,
         paEndAnnouncementId: input.paEndAnnouncementId ?? null,
-        receivers: { create: (input.receiverEndpointIds ?? []).map((id) => ({ endpointId: id })) },
+        receivers: {
+          create: (input.receiverEndpointIds ?? []).map((id) => ({
+            endpointId: id,
+          })),
+        },
       },
-      include: { initiatorEndpoint: { select: { extension: true, label: true } }, receivers: true },
+      include: {
+        initiatorEndpoint: { select: { extension: true, label: true } },
+        receivers: true,
+      },
     });
     return this.serialize(g);
   }
 
   async update(id: number, input: Partial<PaGroupInput>): Promise<PaGroup> {
-    const existing = await prisma.paGroup.findUnique({ where: { id }, include: { receivers: true } });
-    if (!existing) throw new ApiError(404, 'PA group not found');
+    const existing = await prisma.paGroup.findUnique({
+      where: { id },
+      include: { receivers: true },
+    });
+    if (!existing) throw new ApiError(404, "PA group not found");
     const g = await prisma.paGroup.update({
       where: { id },
       data: {
         name: input.name != null ? input.name.trim() : undefined,
-        extension: input.extension != null ? this.normalizeExtension(input.extension) : undefined,
-        initiatorEndpointId: input.initiatorEndpointId !== undefined ? input.initiatorEndpointId : undefined,
-        paStartAnnouncementId: input.paStartAnnouncementId !== undefined ? input.paStartAnnouncementId : undefined,
-        paEndAnnouncementId: input.paEndAnnouncementId !== undefined ? input.paEndAnnouncementId : undefined,
+        extension:
+          input.extension != null
+            ? this.normalizeExtension(input.extension)
+            : undefined,
+        initiatorEndpointId:
+          input.initiatorEndpointId !== undefined
+            ? input.initiatorEndpointId
+            : undefined,
+        paStartAnnouncementId:
+          input.paStartAnnouncementId !== undefined
+            ? input.paStartAnnouncementId
+            : undefined,
+        paEndAnnouncementId:
+          input.paEndAnnouncementId !== undefined
+            ? input.paEndAnnouncementId
+            : undefined,
         ...(input.receiverEndpointIds
           ? {
               receivers: {
                 deleteMany: {},
-                create: input.receiverEndpointIds.map((rid) => ({ endpointId: rid })),
+                create: input.receiverEndpointIds.map((rid) => ({
+                  endpointId: rid,
+                })),
               },
             }
           : {}),
       },
-      include: { initiatorEndpoint: { select: { extension: true, label: true } }, receivers: true },
+      include: {
+        initiatorEndpoint: { select: { extension: true, label: true } },
+        receivers: true,
+      },
     });
     return this.serialize(g);
   }
 
   async remove(id: number): Promise<void> {
     const existing = await prisma.paGroup.findUnique({ where: { id } });
-    if (!existing) throw new ApiError(404, 'PA group not found');
+    if (!existing) throw new ApiError(404, "PA group not found");
     await prisma.paGroup.delete({ where: { id } });
   }
 
@@ -111,27 +144,45 @@ export class PaGroupService {
    * group extension. Resolves receivers, originates their member legs into a new
    * ConfBridge, and returns the conf name + boundary audio for the dialplan.
    */
-  async trigger(extension: string, callerExt?: string | null): Promise<PaGroupTrigger> {
+  async trigger(
+    extension: string,
+    callerExt?: string | null,
+  ): Promise<PaGroupTrigger> {
     const group = await prisma.paGroup.findUnique({
       where: { extension: String(extension).trim() },
-      include: { receivers: { include: { endpoint: { select: { extension: true, isActive: true } } } } },
+      include: {
+        receivers: {
+          include: {
+            endpoint: { select: { extension: true, isActive: true } },
+          },
+        },
+      },
     });
-    if (!group) throw new ApiError(404, 'PA group not found');
+    if (!group) throw new ApiError(404, "PA group not found");
 
     // Enforce initiator (if a specific device is configured).
     if (group.initiatorEndpointId != null) {
-      const caller = await prisma.endpoint.findUnique({ where: { extension: callerExt ?? '' } });
+      const caller = await prisma.endpoint.findUnique({
+        where: { extension: callerExt ?? "" },
+      });
       if (!caller || caller.id !== group.initiatorEndpointId) {
-        throw new ApiError(403, 'This device is not the initiator for this group');
+        throw new ApiError(
+          403,
+          "This device is not the initiator for this group",
+        );
       }
     }
 
-    const onlineReceivers = await onlineEndpoints(this.ami, group.receivers.map((receiver) => ({
-      extension: receiver.endpoint.extension,
-      isActive: receiver.endpoint.isActive,
-    })));
+    const onlineReceivers = await onlineEndpoints(
+      this.ami,
+      group.receivers.map((receiver) => ({
+        extension: receiver.endpoint.extension,
+        isActive: receiver.endpoint.isActive,
+      })),
+    );
     const receiverExts = onlineReceivers.map((receiver) => receiver.extension);
-    if (receiverExts.length === 0) throw new ApiError(422, 'Group has no online receivers');
+    if (receiverExts.length === 0)
+      throw new ApiError(422, "Group has no online receivers");
 
     const pageConf = randomUUID();
     const title = `PA: ${group.name}`;
@@ -139,15 +190,31 @@ export class PaGroupService {
     // has none selected, fall back to the system-seeded pa_start/pa_end media
     // (registered as Announcement rows so they normalize through the same
     // pipeline — never absolute on-disk paths).
-    const defaultStartId = await this.defaultPaId('pa_start');
-    const defaultEndId = await this.defaultPaId('pa_end');
-    const paStart = await this.audioName(group.paStartAnnouncementId ?? defaultStartId);
-    const paEnd = await this.audioName(group.paEndAnnouncementId ?? defaultEndId);
+    const defaultStartId = await this.defaultPaId("pa_start");
+    const defaultEndId = await this.defaultPaId("pa_end");
+    const paStart = await this.audioName(
+      group.paStartAnnouncementId ?? defaultStartId,
+    );
+    const paEnd = await this.audioName(
+      group.paEndAnnouncementId ?? defaultEndId,
+    );
     const log = await prisma.broadcastLog.create({
-      data: { status: 'pending', endpointIds: group.receivers.map((r) => r.endpointId), title, startedAt: new Date() },
+      data: {
+        status: "pending",
+        endpointIds: group.receivers.map((r) => r.endpointId),
+        title,
+        startedAt: new Date(),
+      },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: log.id, status: 'pending', zoneId: null, title, endpointIds: log.endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: null,
+      id: log.id,
+      status: "pending",
+      zoneId: null,
+      title,
+      endpointIds: log.endpointIds,
+      durationSec: log.durationSec,
+      startedAt: log.startedAt,
+      endedAt: null,
     });
 
     try {
@@ -160,18 +227,21 @@ export class PaGroupService {
         logId: log.id,
         pageConf,
         title,
-        role: 'paging_pa_user',
+        role: "paging_pa_user",
       });
       // Hold announcer: a Local leg whose ;2 runs `announce` (ConfBridge,
       // paging_announcer — unmuted, not marked) and ;1 waits, keeping the conf
       // alive while the initiator speaks as the marked speaker.
       await this.ami.action({
-        Action: 'Originate',
-        Channel: 'Local/announce@pa-announce',
-        Application: 'Wait',
-        Data: '3600',
-        Variable: ['_PAGE_CONF=' + pageConf, '_PA_START=' + (paStart ?? 'beep')].join(','),
-        Async: 'true',
+        Action: "Originate",
+        Channel: "Local/announce@pa-announce",
+        Application: "Wait",
+        Data: "3600",
+        Variable: [
+          "_PAGE_CONF=" + pageConf,
+          "_PA_START=" + (paStart ?? "beep"),
+        ].join(","),
+        Async: "true",
       });
       // PA start tone: played AFTER the receiver member legs have actually joined
       // the conference. We poll Asterisk until the expected number of receiver
@@ -182,22 +252,34 @@ export class PaGroupService {
       if (paStart) {
         await this.waitForMembers(pageConf, receiverExts.length, 8000);
         await this.ami.action({
-          Action: 'Originate',
-          Channel: 'Local/announce@pa-announce',
-          Application: 'Playback',
+          Action: "Originate",
+          Channel: "Local/announce@pa-announce",
+          Application: "Playback",
           Data: paStart,
-          Variable: ['_PAGE_CONF=' + pageConf, '_PA_ROLE=paging_pa_tone'].join(','),
-          Async: 'true',
+          Variable: ["_PAGE_CONF=" + pageConf, "_PA_ROLE=paging_pa_tone"].join(
+            ",",
+          ),
+          Async: "true",
         });
       }
       // Remember paEnd (and logId) so the listener can replay it on teardown.
       this.paEndByConf.set(pageConf, { paEnd, logId: log.id });
     } catch (e) {
-      await prisma.broadcastLog.update({ where: { id: log.id }, data: { status: 'failed', endedAt: new Date() } });
+      await prisma.broadcastLog.update({
+        where: { id: log.id },
+        data: { status: "failed", endedAt: new Date() },
+      });
       throw new ApiError(500, `PA trigger failed: ${(e as Error).message}`);
     }
 
-    return { ok: true, pageConf, receivers: receiverExts, paStart, paEnd, title };
+    return {
+      ok: true,
+      pageConf,
+      receivers: receiverExts,
+      paStart,
+      paEnd,
+      title,
+    };
   }
 
   /**
@@ -214,12 +296,14 @@ export class PaGroupService {
     // its audio reaches the muted paging_pa_user receivers).
     if (info.paEnd) {
       await this.ami.action({
-        Action: 'Originate',
-        Channel: 'Local/announce@pa-announce',
-        Application: 'Playback',
+        Action: "Originate",
+        Channel: "Local/announce@pa-announce",
+        Application: "Playback",
         Data: info.paEnd,
-        Variable: ['_PAGE_CONF=' + pageConf, '_PA_ROLE=paging_pa_tone'].join(','),
-        Async: 'true',
+        Variable: ["_PAGE_CONF=" + pageConf, "_PA_ROLE=paging_pa_tone"].join(
+          ",",
+        ),
+        Async: "true",
       });
       // Give the tone a moment before dropping the receivers.
       await new Promise((r) => setTimeout(r, 2000));
@@ -233,35 +317,63 @@ export class PaGroupService {
     // the Monitor never shows these receivers stuck on "receiving".
     this.monitor?.endCall(`log:${info.logId}`);
 
-    const current = await prisma.broadcastLog.findUnique({ where: { id: info.logId }, select: { status: true, title: true, startedAt: true } });
-    const updated = await prisma.broadcastLog.update({ where: { id: info.logId }, data: { status: 'success', endedAt: new Date() } });
+    const current = await prisma.broadcastLog.findUnique({
+      where: { id: info.logId },
+      select: { status: true, title: true, startedAt: true },
+    });
+    const updated = await prisma.broadcastLog.update({
+      where: { id: info.logId },
+      data: { status: "success", endedAt: new Date() },
+    });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: updated.id, status: updated.status, zoneId: null, title: current?.title ?? '', endpointIds: updated.endpointIds, durationSec: updated.durationSec, startedAt: updated.startedAt, endedAt: updated.endedAt,
+      id: updated.id,
+      status: updated.status,
+      zoneId: null,
+      title: current?.title ?? "",
+      endpointIds: updated.endpointIds,
+      durationSec: updated.durationSec,
+      startedAt: updated.startedAt,
+      endedAt: updated.endedAt,
     });
   }
 
   /** Playback path (filename without extension) for an Announcement by id. */
-  private async audioName(announcementId: number | null): Promise<string | null> {
+  private async audioName(
+    announcementId: number | null,
+  ): Promise<string | null> {
     if (announcementId == null) return null;
-    const a = await prisma.announcement.findUnique({ where: { id: announcementId } });
+    const a = await prisma.announcement.findUnique({
+      where: { id: announcementId },
+    });
     if (!a) return null;
     // Playback wants the absolute filename WITHOUT extension (existing pattern).
-    return `${config.announcementsDir}/${a.filename}`.replace(/\.\w+$/, '');
+    return `${config.announcementsDir}/${a.filename}`.replace(/\.\w+$/, "");
   }
 
   /** Find the seeded pa_start / pa_end Announcement (registered via seed()). */
   private async defaultPaId(basename: string): Promise<number | null> {
-    const a = await prisma.announcement.findFirst({ where: { name: basename, music: false }, orderBy: { id: 'asc' } });
+    const a = await prisma.announcement.findFirst({
+      where: { name: basename, music: false },
+      orderBy: { id: "asc" },
+    });
     return a?.id ?? null;
   }
 
   /** Poll Asterisk until `count` receiver members (paging_pa_user) are in the
    *  conference (or timeout). Returns true if the expected count was reached. */
-  private async waitForMembers(pageConf: string, count: number, timeoutMs: number): Promise<boolean> {
+  private async waitForMembers(
+    pageConf: string,
+    count: number,
+    timeoutMs: number,
+  ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const lines = await this.ami.coreShowChannels().catch(() => []) as string[];
-      const members = lines.filter((l) => l.includes(pageConf) && l.includes('paging_pa_user')).length;
+      const lines = (await this.ami
+        .coreShowChannels()
+        .catch(() => [])) as string[];
+      const members = lines.filter(
+        (l) => l.includes(pageConf) && l.includes("paging_pa_user"),
+      ).length;
       if (members >= count) return true;
       await new Promise((r) => setTimeout(r, 400));
     }
@@ -276,10 +388,10 @@ export class PaGroupService {
    * device-to-device Dial(PJSIP/<ext>) path ("peer not found").
    */
   private normalizeExtension(ext: string): string {
-    const d = String(ext).trim().replace(/\D/g, '');
-    if (d.length === 0) throw new ApiError(422, 'Group extension is required');
-    let tail = d.slice(-3).padStart(3, '1');
-    if (tail[0] === '0') tail = `1${tail.slice(1)}`;
+    const d = String(ext).trim().replace(/\D/g, "");
+    if (d.length === 0) throw new ApiError(422, "Group extension is required");
+    let tail = d.slice(-3).padStart(3, "1");
+    if (tail[0] === "0") tail = `1${tail.slice(1)}`;
     return `9${tail}`;
   }
 

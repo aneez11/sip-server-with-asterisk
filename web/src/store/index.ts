@@ -342,7 +342,8 @@ export const useStore = create<StoreState>((set, get) => {
     stopBroadcast: async (logId) => {
       set((s) => ({
         recentLogs: s.recentLogs.filter(
-          (log) => log.status !== "pending" || (logId != null && log.id !== logId),
+          (log) =>
+            log.status !== "pending" || (logId != null && log.id !== logId),
         ),
       }));
       try {
@@ -543,9 +544,10 @@ export const useStore = create<StoreState>((set, get) => {
       // immediately instead of playing out the current track.
       const logId = get().currentMusicLogId;
       set((s) => ({
-        recentLogs: logId == null
-          ? s.recentLogs
-          : s.recentLogs.filter((log) => log.id !== logId),
+        recentLogs:
+          logId == null
+            ? s.recentLogs
+            : s.recentLogs.filter((log) => log.id !== logId),
         musicPlaying: false,
         currentMusicId: null,
         currentMusicLogId: null,

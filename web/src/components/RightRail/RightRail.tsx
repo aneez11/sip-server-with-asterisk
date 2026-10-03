@@ -54,7 +54,7 @@ export const RightRail = () => {
         ? "destructive"
         : status === "stopped"
           ? "secondary"
-        : "outline";
+          : "outline";
 
   const headerTitle = {
     broadcast: "Broadcast history",
@@ -174,7 +174,9 @@ export const RightRail = () => {
                         {b.title || b.zoneName || "Broadcast"}
                       </div>
                       <div className="text-muted-foreground text-[10px] truncate">
-                        {b.zoneName ? `${b.zoneName} · ` : ""}{fmtClock(b.startedAt)} · {b.endpointIds?.length ?? 0} endpoint{(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
+                        {b.zoneName ? `${b.zoneName} · ` : ""}
+                        {fmtClock(b.startedAt)} · {b.endpointIds?.length ?? 0}{" "}
+                        endpoint{(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
                       </div>
                     </div>
                     <Badge

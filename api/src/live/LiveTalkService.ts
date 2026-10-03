@@ -14,22 +14,22 @@
 // Browser audio flows over Socket.IO binary (`talk:audio`), the API resamples
 // to 8k and µ-law-encodes it into the RTP leg.
 
-import { randomUUID } from 'node:crypto';
-import dgram from 'node:dgram';
-import type { Server as SocketServer } from 'socket.io';
-import { prisma } from '../db.js';
-import { config } from '../config.js';
-import type { AmiClient } from '../ami/client.js';
-import { ApiError } from '../errors.js';
-import { EVENTS } from '@infinity/shared';
-import { SipUa } from '../lib/sip-ua.js';
-import { RtpSession } from '../lib/rtp-session.js';
-import { pcm16ToF32, resampleF32, f32ToPcm16 } from '../lib/resample.js';
-import { originateMemberLegs } from '../lib/member-legs.js';
-import { onlineEndpoints } from '../lib/online-endpoints.js';
-import { MonitorService } from './monitor.js';
+import { randomUUID } from "node:crypto";
+import dgram from "node:dgram";
+import type { Server as SocketServer } from "socket.io";
+import { prisma } from "../db.js";
+import { config } from "../config.js";
+import type { AmiClient } from "../ami/client.js";
+import { ApiError } from "../errors.js";
+import { EVENTS } from "@infinity/shared";
+import { SipUa } from "../lib/sip-ua.js";
+import { RtpSession } from "../lib/rtp-session.js";
+import { pcm16ToF32, resampleF32, f32ToPcm16 } from "../lib/resample.js";
+import { originateMemberLegs } from "../lib/member-legs.js";
+import { onlineEndpoints } from "../lib/online-endpoints.js";
+import { MonitorService } from "./monitor.js";
 
-export type TalkMode = 'live' | 'twoway';
+export type TalkMode = "live" | "twoway";
 
 export interface TalkSessionView {
   id: string;
@@ -54,13 +54,13 @@ interface TalkSession {
   callId: string;
 }
 
-const SOCKET_AUDIO_EVENT = 'talk:audio';
+const SOCKET_AUDIO_EVENT = "talk:audio";
 
 function getLocalIp(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const sock = dgram.createSocket('udp4');
-    sock.once('error', reject);
-    sock.once('connect', () => {
+    const sock = dgram.createSocket("udp4");
+    sock.once("error", reject);
+    sock.once("connect", () => {
       const ip = sock.address().address;
       sock.close();
       resolve(ip);
@@ -98,22 +98,42 @@ export class LiveTalkService {
 
   /** Start a live talk to the given endpoints. */
   async start(endpointIds: number[]): Promise<TalkSessionView> {
-    const endpoints = await onlineEndpoints(this.ami, await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } }));
-    if (endpoints.length === 0) throw new ApiError(422, 'No online endpoints in selection');
+    const endpoints = await onlineEndpoints(
+      this.ami,
+      await prisma.endpoint.findMany({
+        where: { id: { in: endpointIds }, isActive: true },
+      }),
+    );
+    if (endpoints.length === 0)
+      throw new ApiError(422, "No online endpoints in selection");
 
-    const mode: TalkMode = endpoints.length === 1 ? 'twoway' : 'live';
-    const title = mode === 'twoway' ? `Two-way call ${fmtClock()}` : `Live talk ${fmtClock()}`;
+    const mode: TalkMode = endpoints.length === 1 ? "twoway" : "live";
+    const title =
+      mode === "twoway"
+        ? `Two-way call ${fmtClock()}`
+        : `Live talk ${fmtClock()}`;
 
     const log = await prisma.broadcastLog.create({
-      data: { status: 'pending', endpointIds, title, startedAt: new Date() },
+      data: { status: "pending", endpointIds, title, startedAt: new Date() },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: log.id, status: 'pending', zoneId: null, title: log.title, endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: null,
+      id: log.id,
+      status: "pending",
+      zoneId: null,
+      title: log.title,
+      endpointIds,
+      durationSec: log.durationSec,
+      startedAt: log.startedAt,
+      endedAt: null,
     });
 
     const localIp = await getLocalIp();
     const id = randomUUID();
-    const rtp = new RtpSession({ localPort: 0, remoteHost: config.liveTalk.asteriskHost, remotePort: 0 });
+    const rtp = new RtpSession({
+      localPort: 0,
+      remoteHost: config.liveTalk.asteriskHost,
+      remotePort: 0,
+    });
     await rtp.ready();
     const sip = new SipUa({
       localIp,
@@ -123,9 +143,17 @@ export class LiveTalkService {
     });
 
     const session: TalkSession = {
-      id, mode, logId: log.id, endpointIds,
+      id,
+      mode,
+      logId: log.id,
+      endpointIds,
       endpointExtensions: endpoints.map((e) => e.extension),
-      sip, rtp, connected: false, socketId: null, pageConf: null, startedAt: new Date(),
+      sip,
+      rtp,
+      connected: false,
+      socketId: null,
+      pageConf: null,
+      startedAt: new Date(),
       callId: `log:${log.id}`,
     };
 
@@ -150,7 +178,7 @@ export class LiveTalkService {
     this.attachRecv(session);
 
     try {
-      if (mode === 'live') {
+      if (mode === "live") {
         // 1. Originate one member leg per endpoint so each answered endpoint
         //    joins the shared conference muted (a single `&`-joined Dial only
         //    connects one member).
@@ -170,26 +198,36 @@ export class LiveTalkService {
         const rtpPort = await sip.call({
           target: `live-${pageConf}`,
           rtpPort: rtp.localPort,
-          onRinging: () => { /* members may answer before the UA connects */ },
+          onRinging: () => {
+            /* members may answer before the UA connects */
+          },
         });
         rtp.setRemotePort(rtpPort);
       } else {
         // Two-way: the operator UA dials the single phone endpoint directly.
         const target = endpoints[0].extension;
-        this.monitor.setMember(session.callId, target, 'dialing');
+        this.monitor.setMember(session.callId, target, "dialing");
         const rtpPort = await sip.call({ target, rtpPort: rtp.localPort });
         rtp.setRemotePort(rtpPort);
-        this.monitor.setMember(session.callId, target, 'receiving');
+        this.monitor.setMember(session.callId, target, "receiving");
       }
       session.connected = true;
       this.sessions.set(id, session);
-      return { id, mode, endpointIds, startedAt: session.startedAt.toISOString() };
+      return {
+        id,
+        mode,
+        endpointIds,
+        startedAt: session.startedAt.toISOString(),
+      };
     } catch (e) {
       rtp.close();
       sip.hangup();
       this.monitor.endCall(session.callId);
-      await this.finalize(log.id, 'failed');
-      throw new ApiError(500, `Live talk setup failed: ${(e as Error).message}`);
+      await this.finalize(log.id, "failed");
+      throw new ApiError(
+        500,
+        `Live talk setup failed: ${(e as Error).message}`,
+      );
     }
   }
 
@@ -206,10 +244,10 @@ export class LiveTalkService {
       // ending it ends the conference via end_marked and kicks the members.
       stopped += await this.hangupOperator();
       // Live mode: also hang up the member legs.
-      if (s.mode === 'live') {
+      if (s.mode === "live") {
         stopped += await this.stopPages(s.logId);
       }
-      await this.finalize(s.logId, s.connected ? 'success' : 'failed');
+      await this.finalize(s.logId, s.connected ? "success" : "failed");
       stopped += 1;
     }
     return { stopped };
@@ -233,7 +271,9 @@ export class LiveTalkService {
   }
 
   stopForSocket(socketId: string): Promise<{ stopped: number }> {
-    const ids = [...this.sessions.values()].filter((s) => s.socketId === socketId).map((s) => s.id);
+    const ids = [...this.sessions.values()]
+      .filter((s) => s.socketId === socketId)
+      .map((s) => s.id);
     if (ids.length === 0) return Promise.resolve({ stopped: 0 });
     return this.stop(ids[0]);
   }
@@ -256,7 +296,11 @@ export class LiveTalkService {
   }
 
   /** Feed browser mic PCM (Int16 at the browser sample rate) into the RTP leg. */
-  async sendAudio(talkId: string, pcm: Int16Array, rate: number): Promise<void> {
+  async sendAudio(
+    talkId: string,
+    pcm: Int16Array,
+    rate: number,
+  ): Promise<void> {
     const s = this.sessions.get(talkId);
     if (!s || !s.connected) return;
     let f32 = pcm16ToF32(pcm);
@@ -264,7 +308,10 @@ export class LiveTalkService {
     // µ-law encoder clips at 32635 (~0.996), and a hot mic hitting 0 dBFS
     // would clip the waveform harshly.
     let peak = 0;
-    for (let i = 0; i < f32.length; i++) { const a = Math.abs(f32[i]); if (a > peak) peak = a; }
+    for (let i = 0; i < f32.length; i++) {
+      const a = Math.abs(f32[i]);
+      if (a > peak) peak = a;
+    }
     if (peak > 0.01) {
       const gain = 0.5 / peak;
       if (gain < 1) for (let i = 0; i < f32.length; i++) f32[i] *= gain;
@@ -274,23 +321,41 @@ export class LiveTalkService {
   }
 
   private async finalize(logId: number, status: string): Promise<void> {
-    const current = await prisma.broadcastLog.findUnique({ where: { id: logId }, select: { status: true, startedAt: true } });
-    if (!current || current.status !== 'pending') return;
-    const updated = await prisma.broadcastLog.update({ where: { id: logId }, data: { status, endedAt: new Date() } });
+    const current = await prisma.broadcastLog.findUnique({
+      where: { id: logId },
+      select: { status: true, startedAt: true },
+    });
+    if (!current || current.status !== "pending") return;
+    const updated = await prisma.broadcastLog.update({
+      where: { id: logId },
+      data: { status, endedAt: new Date() },
+    });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: updated.id, status, zoneId: null, title: updated.title, endpointIds: updated.endpointIds, durationSec: updated.durationSec, startedAt: updated.startedAt, endedAt: updated.endedAt,
+      id: updated.id,
+      status,
+      zoneId: null,
+      title: updated.title,
+      endpointIds: updated.endpointIds,
+      durationSec: updated.durationSec,
+      startedAt: updated.startedAt,
+      endedAt: updated.endedAt,
     });
   }
 
   /** RTP receive -> browser playback (two-way only). Wired in index.ts. */
   private attachRecv(s: TalkSession): void {
     s.rtp.setOnAudio((pcm8k) => {
-      if (!s.socketId || s.mode !== 'twoway') return;
+      if (!s.socketId || s.mode !== "twoway") return;
       const f32 = pcm16ToF32(pcm8k);
       const up = resampleF32(f32, 8000, 48000);
       const out = f32ToPcm16(up);
-      const buf = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
-      this.io.to(s.socketId).emit(SOCKET_AUDIO_EVENT, { talkId: s.id, rate: 48000, data: buf });
+      const buf = out.buffer.slice(
+        out.byteOffset,
+        out.byteOffset + out.byteLength,
+      ) as ArrayBuffer;
+      this.io
+        .to(s.socketId)
+        .emit(SOCKET_AUDIO_EVENT, { talkId: s.id, rate: 48000, data: buf });
     });
   }
 }

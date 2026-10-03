@@ -1,4 +1,4 @@
-export type EndpointType = 'phone' | 'speaker';
+export type EndpointType = "phone" | "speaker";
 
 export interface Endpoint {
   id: number;
@@ -57,13 +57,18 @@ export interface PaGroup {
 export interface PaGroupTrigger {
   ok: boolean;
   pageConf: string;
-  receivers: string[];       // extensions to originate as member legs
-  paStart: string | null;     // announcement filename or 'beep'
+  receivers: string[]; // extensions to originate as member legs
+  paStart: string | null; // announcement filename or 'beep'
   paEnd: string | null;
   title: string;
 }
 
-export type BroadcastStatus = 'pending' | 'success' | 'partial' | 'failed' | 'stopped';
+export type BroadcastStatus =
+  | "pending"
+  | "success"
+  | "partial"
+  | "failed"
+  | "stopped";
 
 export interface BroadcastLog {
   id: number;
@@ -141,17 +146,22 @@ export interface CodecNegotiatedPayload {
 }
 
 export type SocketEvent =
-  | { type: 'broadcast.updated'; log: BroadcastLog }
-  | { type: 'talk.played'; broadcastLogId: number }
-  | { type: 'endpoints.changed' }
-  | { type: 'codec.negotiated'; data: CodecNegotiatedPayload };
+  | { type: "broadcast.updated"; log: BroadcastLog }
+  | { type: "talk.played"; broadcastLogId: number }
+  | { type: "endpoints.changed" }
+  | { type: "codec.negotiated"; data: CodecNegotiatedPayload };
 
 // ---- live monitor (active calls) --------------------------------------------
 
-export type CallKind = 'broadcast' | 'music' | 'live' | 'twoway';
+export type CallKind = "broadcast" | "music" | "live" | "twoway";
 
 /** Per-device receive status for an active call. */
-export type DeviceCallStatus = 'idle' | 'dialing' | 'receiving' | 'done' | 'missed';
+export type DeviceCallStatus =
+  | "idle"
+  | "dialing"
+  | "receiving"
+  | "done"
+  | "missed";
 
 export interface ActiveCallMember {
   extension: string;
@@ -173,9 +183,9 @@ export interface CallsSnapshot {
 }
 
 export const EVENTS = {
-  broadcastUpdated: 'broadcast.updated',
-  talkPlayed: 'talk.played',
-  endpointsChanged: 'endpoints.changed',
-  codecNegotiated: 'codec:negotiated',
-  callsUpdated: 'calls.updated',
+  broadcastUpdated: "broadcast.updated",
+  talkPlayed: "talk.played",
+  endpointsChanged: "endpoints.changed",
+  codecNegotiated: "codec:negotiated",
+  callsUpdated: "calls.updated",
 } as const;
