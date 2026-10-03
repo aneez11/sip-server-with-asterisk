@@ -17,6 +17,7 @@ import { EVENTS } from '@infinity/shared';
 import type { MonitorService } from '../live/monitor.js';
 import type { PaGroup, PaGroupTrigger } from '@infinity/shared';
 import { originateMemberLegs } from '../lib/member-legs.js';
+import { onlineEndpoints } from '../lib/online-endpoints.js';
 
 export interface PaGroupInput {
   name: string;
@@ -125,10 +126,12 @@ export class PaGroupService {
       }
     }
 
-    const receiverExts = group.receivers
-      .filter((r) => r.endpoint.isActive)
-      .map((r) => r.endpoint.extension);
-    if (receiverExts.length === 0) throw new ApiError(422, 'Group has no active receivers');
+    const onlineReceivers = await onlineEndpoints(this.ami, group.receivers.map((receiver) => ({
+      extension: receiver.endpoint.extension,
+      isActive: receiver.endpoint.isActive,
+    })));
+    const receiverExts = onlineReceivers.map((receiver) => receiver.extension);
+    if (receiverExts.length === 0) throw new ApiError(422, 'Group has no online receivers');
 
     const pageConf = randomUUID();
     const title = `PA: ${group.name}`;
@@ -144,7 +147,7 @@ export class PaGroupService {
       data: { status: 'pending', endpointIds: group.receivers.map((r) => r.endpointId), title, startedAt: new Date() },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: log.id, status: 'pending', zoneId: null, title, startedAt: log.startedAt, endedAt: null,
+      id: log.id, status: 'pending', zoneId: null, title, endpointIds: log.endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: null,
     });
 
     try {
@@ -233,7 +236,7 @@ export class PaGroupService {
     const current = await prisma.broadcastLog.findUnique({ where: { id: info.logId }, select: { status: true, title: true, startedAt: true } });
     const updated = await prisma.broadcastLog.update({ where: { id: info.logId }, data: { status: 'success', endedAt: new Date() } });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: updated.id, status: updated.status, zoneId: null, title: current?.title ?? '', startedAt: updated.startedAt, endedAt: updated.endedAt,
+      id: updated.id, status: updated.status, zoneId: null, title: current?.title ?? '', endpointIds: updated.endpointIds, durationSec: updated.durationSec, startedAt: updated.startedAt, endedAt: updated.endedAt,
     });
   }
 

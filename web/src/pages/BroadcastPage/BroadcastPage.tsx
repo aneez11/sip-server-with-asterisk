@@ -52,7 +52,7 @@ export const BroadcastPage = () => {
     ...targets.filter((t) => t.kind === 'endpoint').map((t) => t.id),
     ...targets.filter((t) => t.kind === 'zone').flatMap((t) => zones.find((z) => z.id === t.id)?.endpointIds ?? []),
     ...targets.filter((t) => t.kind === 'group').flatMap((t) => paGroups.find((g) => g.id === t.id)?.receiverEndpointIds ?? []),
-  ])).filter((id) => endpoints.some((e) => e.id === id && e.isActive));
+  ])).filter((id) => endpoints.some((e) => e.id === id && e.isActive && e.registered));
 
   return (
     <div className="flex flex-col h-full gap-4">

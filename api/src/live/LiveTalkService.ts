@@ -26,6 +26,7 @@ import { SipUa } from '../lib/sip-ua.js';
 import { RtpSession } from '../lib/rtp-session.js';
 import { pcm16ToF32, resampleF32, f32ToPcm16 } from '../lib/resample.js';
 import { originateMemberLegs } from '../lib/member-legs.js';
+import { onlineEndpoints } from '../lib/online-endpoints.js';
 import { MonitorService } from './monitor.js';
 
 export type TalkMode = 'live' | 'twoway';
@@ -97,8 +98,8 @@ export class LiveTalkService {
 
   /** Start a live talk to the given endpoints. */
   async start(endpointIds: number[]): Promise<TalkSessionView> {
-    const endpoints = await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } });
-    if (endpoints.length === 0) throw new ApiError(422, 'No active endpoints in selection');
+    const endpoints = await onlineEndpoints(this.ami, await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } }));
+    if (endpoints.length === 0) throw new ApiError(422, 'No online endpoints in selection');
 
     const mode: TalkMode = endpoints.length === 1 ? 'twoway' : 'live';
     const title = mode === 'twoway' ? `Two-way call ${fmtClock()}` : `Live talk ${fmtClock()}`;
@@ -107,7 +108,7 @@ export class LiveTalkService {
       data: { status: 'pending', endpointIds, title, startedAt: new Date() },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: log.id, status: 'pending', zoneId: null, title: log.title, startedAt: log.startedAt, endedAt: null,
+      id: log.id, status: 'pending', zoneId: null, title: log.title, endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: null,
     });
 
     const localIp = await getLocalIp();
@@ -277,7 +278,7 @@ export class LiveTalkService {
     if (!current || current.status !== 'pending') return;
     const updated = await prisma.broadcastLog.update({ where: { id: logId }, data: { status, endedAt: new Date() } });
     this.io.emit(EVENTS.broadcastUpdated, {
-      id: updated.id, status, zoneId: null, title: updated.title, startedAt: updated.startedAt, endedAt: updated.endedAt,
+      id: updated.id, status, zoneId: null, title: updated.title, endpointIds: updated.endpointIds, durationSec: updated.durationSec, startedAt: updated.startedAt, endedAt: updated.endedAt,
     });
   }
 

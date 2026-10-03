@@ -1,6 +1,7 @@
 import { useStore } from '@/store';
 import { Badge } from '@/components/Badge/Badge';
 import { Card, CardContent } from '@/components/Card/Card';
+import { Radio } from 'lucide-react';
 
 const fmtClock = (iso: string | null) => {
   if (!iso) return '—';
@@ -11,8 +12,10 @@ const fmtClock = (iso: string | null) => {
 export const HistoryPage = () => {
   const recentLogs = useStore((s) => s.recentLogs);
   const endpoints = useStore((s) => s.endpoints);
+  const busy = useStore((s) => s.busy);
+  const playAdhoc = useStore((s) => s.playAdhoc);
 
-  const statusVariant = (status: string) => (status === 'success' ? 'default' : status === 'failed' ? 'destructive' : 'outline');
+  const statusVariant = (status: string) => status === 'success' ? 'default' : status === 'failed' ? 'destructive' : status === 'stopped' ? 'secondary' : 'outline';
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -32,7 +35,16 @@ export const HistoryPage = () => {
                   </div>
                   <Badge variant={statusVariant(b.status)} className="text-[10px] px-1.5 py-0 flex-shrink-0">{b.status}</Badge>
                 </div>
-                <div className="text-muted-foreground text-[10px]">{labels.join(', ') || '—'}</div>
+                <div className="text-muted-foreground text-[10px] truncate" title={labels.join(', ')}>{labels.join(', ') || '—'}</div>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                  onClick={() => void playAdhoc(b.endpointIds)}
+                  disabled={busy || b.endpointIds.length === 0}
+                  title="Rebroadcast to the same endpoint configuration"
+                >
+                  <Radio size={11} /> Rebroadcast same targets
+                </button>
                 {b.endedAt && <div className="text-muted-foreground text-[10px] font-mono">Ended {fmtClock(b.endedAt)}</div>}
               </CardContent>
             </Card>

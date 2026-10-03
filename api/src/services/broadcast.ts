@@ -7,6 +7,7 @@ import type { Server as SocketServer } from 'socket.io';
 import { ApiError } from '../errors.js';
 import { EVENTS } from '@infinity/shared';
 import { originateMemberLegs } from '../lib/member-legs.js';
+import { onlineEndpoints } from '../lib/online-endpoints.js';
 import type { AnnouncementService } from './announcements.js';
 
 export interface ZonePageOptions {
@@ -63,8 +64,8 @@ export class BroadcastService {
   }
 
   async broadcastAdhoc(endpointIds: number[], announcementId?: number, zone?: ZonePageOptions): Promise<{ id: number }> {
-    const endpoints = await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } });
-    if (endpoints.length === 0) throw new ApiError(422, 'No active endpoints in selection');
+    const endpoints = await onlineEndpoints(this.ami, await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } }));
+    if (endpoints.length === 0) throw new ApiError(422, 'No online endpoints in selection');
 
     let playPath: string | null = null;
     let title = 'Broadcast';
@@ -116,6 +117,8 @@ export class BroadcastService {
       status: 'pending',
       zoneId: log.zoneId,
       title: log.title,
+      endpointIds,
+      durationSec: log.durationSec,
       startedAt: log.startedAt,
       endedAt: null,
     });
@@ -152,7 +155,7 @@ export class BroadcastService {
       });
     } catch (e) {
       await prisma.broadcastLog.update({ where: { id: log.id }, data: { status: 'failed', endedAt: new Date() } });
-      this.io.emit(EVENTS.broadcastUpdated, { id: log.id, status: 'failed', zoneId: log.zoneId, title: log.title, startedAt: log.startedAt, endedAt: new Date().toISOString() });
+      this.io.emit(EVENTS.broadcastUpdated, { id: log.id, status: 'failed', zoneId: log.zoneId, title: log.title, endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: new Date().toISOString() });
       throw new ApiError(500, `AMI originate failed: ${(e as Error).message}`);
     }
 

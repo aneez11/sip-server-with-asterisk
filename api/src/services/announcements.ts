@@ -8,6 +8,10 @@ import type { AmiClient } from '../ami/client.js';
 import type { Server as SocketServer } from 'socket.io';
 import { ApiError } from '../errors.js';
 import { originateMemberLegs } from '../lib/member-legs.js';
+import { onlineEndpoints } from '../lib/online-endpoints.js';
+
+import { EVENTS } from '@infinity/shared';
+
 
 export interface MulterFile {
   buffer: Buffer;
@@ -113,11 +117,21 @@ export class AnnouncementService {
     const a = await prisma.announcement.findUnique({ where: { id } });
     if (!a) throw new ApiError(404, 'Announcement not found');
 
-    const endpoints = await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } });
-    if (endpoints.length === 0) throw new ApiError(422, 'No active endpoints');
+    const endpoints = await onlineEndpoints(this.ami, await prisma.endpoint.findMany({ where: { id: { in: endpointIds }, isActive: true } }));
+    if (endpoints.length === 0) throw new ApiError(422, 'No online endpoints');
 
     const log = await prisma.broadcastLog.create({
       data: { status: 'pending', endpointIds, startedAt: new Date(), title: a.name, durationSec: a.duration ?? null },
+    });
+    this.io.emit(EVENTS.broadcastUpdated, {
+      id: log.id,
+      status: 'pending',
+      zoneId: null,
+      title: log.title,
+      endpointIds,
+      durationSec: log.durationSec,
+      startedAt: log.startedAt,
+      endedAt: null,
     });
 
     const playPath = path.join(config.announcementsDir, a.filename).replace(/\.\w+$/, '');
@@ -146,7 +160,18 @@ export class AnnouncementService {
         music: opts.music,
       });
     } catch (e) {
-      await prisma.broadcastLog.update({ where: { id: log.id }, data: { status: 'failed', endedAt: new Date() } });
+      const endedAt = new Date();
+      await prisma.broadcastLog.update({ where: { id: log.id }, data: { status: 'failed', endedAt } });
+      this.io.emit(EVENTS.broadcastUpdated, {
+        id: log.id,
+        status: 'failed',
+        zoneId: null,
+        title: log.title,
+        endpointIds,
+        durationSec: log.durationSec,
+        startedAt: log.startedAt,
+        endedAt,
+      });
       throw new ApiError(500, `AMI originate failed: ${(e as Error).message}`);
     }
 

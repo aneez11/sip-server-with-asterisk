@@ -51,6 +51,7 @@ export class AmiListener {
   private logIds = new Map<string, number>();
   private logStats = new Map<number, { answered: number; dialed: number; total: number }>();
   private lastFlashCleanup = 0;
+  private stoppedLogIds = new Set<number>();
   /** Direct device-to-device calls (e.g. 2000 -> 2002 via [internal]), keyed by linkedid. */
   private directCalls = new Map<string, DirectCall>();
 
@@ -309,8 +310,10 @@ export class AmiListener {
   async hangupMusic(): Promise<number> {
     let stopped = 0;
     const targets = new Set<string>();
+    const logIds = new Set<number>();
     for (const [linkedid, page] of this.pages) {
       if (page.kind !== 'music') continue;
+      logIds.add(page.logId);
       if (page.originChannel) targets.add(page.originChannel);
     }
     // Also hang up the music announcer leg so the track stops playing.
@@ -326,6 +329,7 @@ export class AmiListener {
       const ok = await this.ami.hangup(ch);
       if (ok) stopped += 1;
     }
+    await this.markStopped(logIds);
     return stopped;
   }
 
@@ -341,9 +345,17 @@ export class AmiListener {
     let stopped = 0;
     const targets = new Set<string>();
     const memberChannels = new Set<string>();
+    const logIds = new Set<number>();
+
+    if (logId != null) logIds.add(logId);
+    else {
+      const pending = await prisma.broadcastLog.findMany({ where: { status: 'pending' }, select: { id: true } });
+      pending.forEach((log) => logIds.add(log.id));
+    }
 
     for (const [, page] of this.pages) {
       if (logId != null && page.logId !== logId) continue;
+      logIds.add(page.logId);
       if (page.originChannel) targets.add(page.originChannel);
       // Hang up the actual PJSIP member channels too: the U(paging-join) gosub
       // has already moved them into the ConfBridge and returned, so killing the
@@ -385,7 +397,35 @@ export class AmiListener {
         if (ok) stopped += 1;
       }
     }
+    await this.markStopped(logIds);
     return stopped;
+  }
+
+  private async markStopped(logIds: Iterable<number>): Promise<void> {
+    for (const logId of new Set(logIds)) {
+      this.stoppedLogIds.add(logId);
+      const result = await prisma.broadcastLog.updateMany({
+        where: { id: logId, status: 'pending' },
+        data: { status: 'stopped', endedAt: new Date() },
+      });
+      if (result.count === 0) {
+        this.stoppedLogIds.delete(logId);
+        continue;
+      }
+      const updated = await prisma.broadcastLog.findUnique({ where: { id: logId } });
+      if (updated) {
+        this.io.emit(EVENTS.broadcastUpdated, {
+          id: updated.id,
+          status: 'stopped',
+          zoneId: updated.zoneId,
+          title: updated.title,
+          endpointIds: updated.endpointIds,
+          durationSec: updated.durationSec,
+          startedAt: updated.startedAt,
+          endedAt: updated.endedAt,
+        });
+      }
+    }
   }
 
   private async finalize(linkedid: string): Promise<void> {
@@ -410,14 +450,21 @@ export class AmiListener {
 
     this.logStats.delete(page.logId);
     const { answered, total } = stats;
-    const status = total > 0 && answered === total ? 'success' : answered > 0 ? 'partial' : 'failed';
+    const status = this.stoppedLogIds.has(page.logId)
+      ? 'stopped'
+      : total > 0 && answered === total
+        ? 'success'
+        : answered > 0
+          ? 'partial'
+          : 'failed';
 
     const updated = await prisma.broadcastLog.update({
       where: { id: page.logId },
       data: { status, endedAt: new Date() },
     });
 
-    this.io.emit(EVENTS.broadcastUpdated, { id: updated.id, status, zoneId: updated.zoneId, title: updated.title, startedAt: updated.startedAt, endedAt: updated.endedAt });
+    this.io.emit(EVENTS.broadcastUpdated, { id: updated.id, status, zoneId: updated.zoneId, title: updated.title, endpointIds: updated.endpointIds, durationSec: updated.durationSec, startedAt: updated.startedAt, endedAt: updated.endedAt });
+    this.stoppedLogIds.delete(page.logId);
   }
 
   /** Run frequently: finalize stuck pages + fail orphaned pending logs. */
@@ -445,7 +492,7 @@ export class AmiListener {
     });
     for (const log of orphans) {
       await prisma.broadcastLog.update({ where: { id: log.id }, data: { status: 'failed', endedAt: new Date() } });
-      this.io.emit(EVENTS.broadcastUpdated, { id: log.id, status: 'failed', zoneId: log.zoneId, title: log.title, startedAt: log.startedAt, endedAt: new Date() });
+      this.io.emit(EVENTS.broadcastUpdated, { id: log.id, status: 'failed', zoneId: log.zoneId, title: log.title, endpointIds: log.endpointIds, durationSec: log.durationSec, startedAt: log.startedAt, endedAt: new Date() });
     }
 
     if (Date.now() - this.lastFlashCleanup > 60_000) {

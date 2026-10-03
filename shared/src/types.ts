@@ -63,7 +63,7 @@ export interface PaGroupTrigger {
   title: string;
 }
 
-export type BroadcastStatus = 'pending' | 'success' | 'partial' | 'failed';
+export type BroadcastStatus = 'pending' | 'success' | 'partial' | 'failed' | 'stopped';
 
 export interface BroadcastLog {
   id: number;

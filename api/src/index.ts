@@ -52,7 +52,11 @@ async function seedAdmin() {
 async function main() {
   // Prisma DB push (schema sync)
   const { execSync } = await import('node:child_process');
-  execSync('npx prisma db push --accept-data-loss', { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+  try {
+    execSync('npx prisma db push --accept-data-loss', { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+  } catch (err) {
+    console.warn('Prisma schema sync skipped:', (err as Error).message);
+  }
   await seedAdmin();
 
   // AMI client
