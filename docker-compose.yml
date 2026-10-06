@@ -31,6 +31,34 @@ services:
       asterisk:
         condition: service_started
     restart: unless-stopped
+    # Auto-restart when the healthcheck fails. `restart:` alone only reacts to a
+    # process EXIT, not to a hung-but-alive process — which is exactly the
+    # multi-day "server hangs, restart fixes it" symptom. The autoheal service
+    # below restarts any container labelled autoheal=true that reports unhealthy.
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # Answers only while the event loop is responsive, and returns 503 when the
+      # AMI/DB sweep loop has stalled. Hitting it is the hang detector; `node` is
+      # guaranteed present in this image (no curl dependency).
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    # Cap memory so a leak is OOM-killed and restarted instead of exhausting the
+    # host and freezing everything. Configurable via .env; the default is sized
+    # for a 2 GB host. Raise on a larger NAS/server.
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Pinned so the [operator-ua-identify] match (172.30.0.4/32) in pjsip.conf
     # stays valid across restarts/redeploys.
     networks:
@@ -59,6 +87,26 @@ services:
       - ./asterisk-config:/etc/asterisk
       - ./announcements:/announcements
     restart: unless-stopped
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # Fails when the Asterisk core stops answering CLI/AMI commands.
+      test: ["CMD", "/usr/sbin/asterisk", "-rx", "core show uptime"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    mem_limit: ${ASTERISK_MEM_LIMIT:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Static IP so it never races the API for 172.30.0.4 on network recreation
+    # (dynamic allocation can otherwise hand .4 to this service and block the API).
+    networks:
+      default:
+        ipv4_address: 172.30.0.3
 
   mysql:
     image: mysql:8
@@ -74,6 +122,38 @@ services:
       retries: 20
       start_period: 30s
     restart: unless-stopped
+    mem_limit: ${MYSQL_MEM_LIMIT:-768m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      default:
+        ipv4_address: 172.30.0.2
+
+  autoheal:
+    # Restarts any container labelled autoheal=true that reports unhealthy.
+    # Automates the manual "restart the container" recovery: a hung API or
+    # Asterisk is detected by its healthcheck and replaced automatically.
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      # Ignore failures in the first 2 minutes (container warm-up).
+      AUTOHEAL_START_PERIOD: 120
+    mem_limit: ${AUTOHEAL_MEM_LIMIT:-64m}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      default:
+        ipv4_address: 172.30.0.5
 
 volumes:
   infinity-mysql:

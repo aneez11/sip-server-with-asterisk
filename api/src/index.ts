@@ -179,16 +179,59 @@ async function main() {
   );
 
   // AMI listener
-  let sweepInterval: ReturnType<typeof setInterval>;
+  //
+  // Long-running stability:
+  //  - `ready` can fire again after an AMI reconnect. The interval must be
+  //    created at most once, or every reconnect stacks another sweep loop,
+  //    compounding AMI/DB load until the process stalls (the multi-day hang).
+  //  - A rejecting sweep must not become an unhandled rejection; log and retry.
+  let sweepInterval: ReturnType<typeof setInterval> | null = null;
+  let lastSweepAt = 0;
   ami.on("ready", () => {
     void liveTalk.cleanupOrphans();
     void announcementService.seedPaMedia();
+    if (sweepInterval) return;
     sweepInterval = setInterval(() => {
-      void listener.sweep();
+      void listener
+        .sweep()
+        .then(() => {
+          lastSweepAt = Date.now();
+        })
+        .catch((err) => console.warn("sweep failed:", (err as Error).message));
     }, 5000);
   });
   ami.on("close", () => {
-    if (sweepInterval) clearInterval(sweepInterval);
+    if (sweepInterval) {
+      clearInterval(sweepInterval);
+      sweepInterval = null;
+    }
+  });
+
+  // Event-loop watchdog: if the process is blocked for a long time (deadlock or
+  // runaway synchronous work), exit so `restart: unless-stopped` starts a clean
+  // process. A permanently blocked loop cannot run this timer and is caught
+  // externally by the container healthcheck hitting /health.
+  const WATCHDOG_TICK_MS = 30_000;
+  let lastTick = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    const drift = now - lastTick - WATCHDOG_TICK_MS;
+    lastTick = now;
+    if (drift > 120_000) {
+      console.error(
+        `Watchdog: event loop stalled ~${Math.round(drift / 1000)}s — exiting for restart`,
+      );
+      process.exit(1);
+    }
+  }, WATCHDOG_TICK_MS);
+
+  // Never leave the process in an undefined state after a fatal error.
+  process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled rejection:", reason);
   });
 
   // Routes
@@ -207,6 +250,21 @@ async function main() {
     createPaTriggerRouter(paGroupService, config.paTriggerSecret),
   );
   app.use("/api/media", createMediaRouter(announcementService));
+
+  // Liveness endpoint (unauthenticated; outside /api so it bypasses session
+  // auth). Docker's healthcheck calls this. It only answers while the event
+  // loop is responsive, and returns 503 when the AMI/DB sweep loop has stopped
+  // progressing — either condition means the container should be restarted
+  // (autoheal; see docker-compose.yml).
+  app.get("/health", (_req, res) => {
+    const sweepStale = lastSweepAt > 0 && Date.now() - lastSweepAt > 60_000;
+    res.status(sweepStale ? 503 : 200).json({
+      status: sweepStale ? "stale" : "ok",
+      amiConnected: ami.isConnected(),
+      uptimeSec: Math.round(process.uptime()),
+      lastSweepAt: lastSweepAt ? new Date(lastSweepAt).toISOString() : null,
+    });
+  });
 
   // Live talk socket audio: the operator's browser streams mic PCM here and
   // the API feeds it into the RTP leg; two-way audio comes back the same way.
