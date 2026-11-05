@@ -352,6 +352,7 @@ export function createTalkRouter(liveTalk: LiveTalkService): Router {
       const session = await liveTalk.start(
         parsed.endpointIds,
         parsed.paGroupIds,
+        parsed.source,
       );
       res.status(201).json({ ...session, broadcastLogId: undefined });
     } catch (e) {

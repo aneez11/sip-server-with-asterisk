@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Radio, Square, PhoneCall, ShieldAlert } from 'lucide-react';
+import { Radio, Square, PhoneCall, ShieldAlert, Mic, MonitorSpeaker } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
 import { suggestedHttpsOrigin } from '@/lib/mic';
@@ -12,6 +12,8 @@ export const LiveTalkPage = () => {
   const talkMode = useStore((s) => s.talkMode);
   const talkTargetIds = useStore((s) => s.talkTargetIds);
   const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
+  const talkSource = useStore((s) => s.talkSource);
+  const setTalkSource = useStore((s) => s.setTalkSource);
   const paGroups = useStore((s) => s.paGroups);
   const busy = useStore((s) => s.busy);
   const startLiveTalk = useStore((s) => s.startLiveTalk);
@@ -80,6 +82,35 @@ export const LiveTalkPage = () => {
       </div>
 
       <div className="flex-shrink-0 border rounded-xl bg-card shadow-lg p-4 flex flex-col items-center gap-3 mt-auto">
+        {!recording && (
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+            <button
+              type="button"
+              onClick={() => setTalkSource('mic')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                talkSource === 'mic'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Mic size={13} />
+              Microphone
+            </button>
+            <button
+              type="button"
+              onClick={() => setTalkSource('device')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                talkSource === 'device'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <MonitorSpeaker size={13} />
+              Device audio
+            </button>
+          </div>
+        )}
+
         <div className="flex items-end justify-center gap-[2px] h-10">
           {Array.from({ length: METER_BARS }).map((_, i) => (
             <span
@@ -98,8 +129,14 @@ export const LiveTalkPage = () => {
           </Button>
         ) : (
           <Button variant="default" size="lg" className="min-w-[190px]" onClick={() => void startLiveTalk()} disabled={busy}>
-            {twoway ? <PhoneCall className="mr-2 h-4 w-4" /> : <Radio className="mr-2 h-4 w-4" />}
-            Start talk
+            {talkSource === 'device' ? (
+              <MonitorSpeaker className="mr-2 h-4 w-4" />
+            ) : twoway ? (
+              <PhoneCall className="mr-2 h-4 w-4" />
+            ) : (
+              <Radio className="mr-2 h-4 w-4" />
+            )}
+            {talkSource === 'device' ? 'Share device audio' : 'Start talk'}
           </Button>
         )}
 
@@ -107,8 +144,12 @@ export const LiveTalkPage = () => {
           {recording
             ? twoway
               ? 'Your voice is streamed live to the phone and the phone audio comes back here — a normal call.'
-              : 'Your voice is streamed live to the selected endpoints in real time. Press Stop to end the broadcast.'
-            : 'Your microphone is streamed live while talk is active (not recorded-then-played).'}
+              : talkSource === 'device'
+                ? 'Device audio is streamed live to the selected targets. Press Stop to end the broadcast.'
+                : 'Your voice is streamed live to the selected endpoints in real time. Press Stop to end the broadcast.'
+            : talkSource === 'device'
+              ? 'Streams audio already playing on this computer (music, a video, another app) to the targets. Pick a tab or screen and enable "Share tab audio" / "Share system audio". This is one-way only.'
+              : 'Your microphone is streamed live while talk is active (not recorded-then-played).'}
         </p>
       </div>
     </div>

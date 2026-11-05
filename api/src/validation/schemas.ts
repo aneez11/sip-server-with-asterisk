@@ -62,6 +62,9 @@ export const talkSchema = z
       .array(z.coerce.number().int().positive())
       .optional()
       .default([]),
+    // mic = operator microphone, device = audio already playing on the operator's
+    // machine (tab/system capture). Device audio is always one-way.
+    source: z.enum(["mic", "device"]).optional().default("mic"),
   })
   .refine((v) => v.endpointIds.length > 0 || v.paGroupIds.length > 0, {
     message: "Select at least one endpoint or PA group",

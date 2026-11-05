@@ -65,6 +65,29 @@ Live talk can target **PA groups** in addition to individual endpoints:
   belong to the dial-triggered PA path, where the initiator dials the group
   extension. Live talk goes straight to the operator's mic.
 
+### Audio capture sources
+
+Live talk can stream either the operator's **microphone** (default) or **audio
+already playing on the operator's device** (music from a tab, a media player,
+another app):
+
+- `source: "mic" | "device"` on `POST /api/talk/start` (default `mic`).
+- `device` uses `navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })`
+  — the only browser API that exposes *rendered* audio (there is no way to tap the
+  OS mixer directly). The video track is stopped immediately; only its audio is
+  used, so nothing visual is captured or transmitted.
+- Chrome/Edge: the picker must be given a surface with audio — *Chrome tab* →
+  "Share tab audio", or *Entire screen* → "Share system audio" (Windows).
+  Firefox shares tab audio via "Share audio" on the tab. The operator must be on
+  the HTTPS origin, since `getDisplayMedia` is also secure-context only.
+- If the shared surface has no audio track, the client raises
+  `DeviceAudioError` ("…enable Share tab audio / Share system audio") instead of
+  starting a silent broadcast.
+- Device audio **always forces one-way `live` mode**, even for a single endpoint:
+  the audio originates from the operator's own speakers, so playing the
+  endpoint's return audio back would create a feedback loop.
+- History labels these sessions `Device audio [→ <group>] HH:MM:SS`.
+
 ## Flow
 
 1. Operator selects targets (endpoints and/or PA groups) and presses **Start

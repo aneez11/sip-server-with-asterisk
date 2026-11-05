@@ -266,6 +266,7 @@ export const api = {
         body: JSON.stringify({
           endpointIds: payload.endpointIds ?? [],
           paGroupIds: payload.paGroupIds ?? [],
+          source: payload.source ?? "mic",
         }),
       }),
     stop: (talkId?: string) =>

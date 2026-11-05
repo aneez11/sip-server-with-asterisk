@@ -130,11 +130,19 @@ export interface AuthResponse {
 
 // ---- live talk (record-then-play) -----------------------------------------
 
+export type TalkSource = "mic" | "device";
+
 export interface TalkStartRequest {
   /** Individually selected endpoint ids. */
   endpointIds?: number[];
   /** PA group ids — every receiver of each group is added as a live target. */
   paGroupIds?: number[];
+  /**
+   * Where the audio comes from: the operator's microphone (default) or audio
+   * already playing on the operator's device (tab/system capture). Device audio
+   * is always a one-way broadcast — it never becomes a two-way call.
+   */
+  source?: TalkSource;
 }
 
 export interface TalkSessionView {
@@ -144,6 +152,7 @@ export interface TalkSessionView {
   endpointIds: number[];
   /** PA groups that contributed targets to this session. */
   paGroupIds: number[];
+  source: TalkSource;
   startedAt: string;
 }
 

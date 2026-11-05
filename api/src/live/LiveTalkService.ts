@@ -30,6 +30,7 @@ import { onlineEndpoints } from "../lib/online-endpoints.js";
 import { MonitorService } from "./monitor.js";
 
 export type TalkMode = "live" | "twoway";
+export type TalkSource = "mic" | "device";
 
 export interface TalkSessionView {
   id: string;
@@ -37,6 +38,7 @@ export interface TalkSessionView {
   endpointIds: number[];
   /** PA groups that contributed targets to this session. */
   paGroupIds: number[];
+  source: TalkSource;
   startedAt: string;
 }
 
@@ -47,6 +49,7 @@ interface TalkSession {
   endpointIds: number[];
   endpointExtensions: string[];
   paGroupIds: number[];
+  source: TalkSource;
   sip: SipUa;
   rtp: RtpSession;
   connected: boolean;
@@ -90,6 +93,7 @@ export class LiveTalkService {
       mode: s.mode,
       endpointIds: s.endpointIds,
       paGroupIds: s.paGroupIds,
+      source: s.source,
       startedAt: s.startedAt.toISOString(),
     }));
   }
@@ -112,6 +116,7 @@ export class LiveTalkService {
   async start(
     endpointIds: number[],
     paGroupIds: number[] = [],
+    source: TalkSource = "mic",
   ): Promise<TalkSessionView> {
     const groups =
       paGroupIds.length > 0
@@ -141,17 +146,24 @@ export class LiveTalkService {
       throw new ApiError(422, "No online endpoints in selection");
 
     // Groups always broadcast one-way; only a plain single-endpoint selection is
-    // a two-way call.
+    // a two-way call. Device audio can never be two-way either: the audio comes
+    // from the operator's own speakers, so playing the endpoint's return audio
+    // back would create a feedback loop.
     const mode: TalkMode =
-      groups.length === 0 && endpoints.length === 1 ? "twoway" : "live";
+      source === "device"
+        ? "live"
+        : groups.length === 0 && endpoints.length === 1
+          ? "twoway"
+          : "live";
     const groupLabel =
       groups.length === 1 ? groups[0].name : `${groups.length} PA groups`;
+    const sourceLabel = source === "device" ? "Device audio" : "Live talk";
     const title =
       mode === "twoway"
         ? `Two-way call ${fmtClock()}`
         : groups.length > 0
-          ? `Live talk → ${groupLabel} ${fmtClock()}`
-          : `Live talk ${fmtClock()}`;
+          ? `${sourceLabel} → ${groupLabel} ${fmtClock()}`
+          : `${sourceLabel} ${fmtClock()}`;
 
     const resolvedIds = endpoints.map((e) => e.id);
     const log = await prisma.broadcastLog.create({
@@ -195,6 +207,7 @@ export class LiveTalkService {
       endpointIds: resolvedIds,
       endpointExtensions: endpoints.map((e) => e.extension),
       paGroupIds,
+      source,
       sip,
       rtp,
       connected: false,
@@ -265,6 +278,7 @@ export class LiveTalkService {
         mode,
         endpointIds: resolvedIds,
         paGroupIds,
+        source,
         startedAt: session.startedAt.toISOString(),
       };
     } catch (e) {

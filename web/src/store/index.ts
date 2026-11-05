@@ -9,12 +9,13 @@ import type {
   Music,
   OverviewResponse,
   PaGroup,
+  TalkSource,
   Zone,
 } from "@infinity/shared";
 import { api, ApiError } from "@/lib/api/client";
 import { MicAccessError, requireMicDevices } from "@/lib/mic";
 import { talkSocket } from "@/lib/api/socket";
-import { liveTalk } from "@/recorder/recorder";
+import { DeviceAudioError, liveTalk } from "@/recorder/recorder";
 import { webmToWav } from "@/lib/audio";
 
 interface StoreState {
@@ -52,6 +53,8 @@ interface StoreState {
   talkTargetIds: Set<number>;
   /** PA groups selected as live talk targets (expanded to receivers by the API). */
   talkPaGroupIds: Set<number>;
+  /** Audio source for live talk: microphone or the operator's device audio. */
+  talkSource: TalkSource;
 
   musicPlaying: boolean;
   currentMusicId: number | null;
@@ -77,6 +80,7 @@ interface StoreState {
   setTalkTargets: (ids: number[]) => void;
   toggleTalkTarget: (id: number) => void;
   toggleTalkPaGroup: (id: number) => void;
+  setTalkSource: (source: TalkSource) => void;
   setRecording: (r: boolean) => void;
   setTalkLevel: (l: number) => void;
   startLiveTalk: () => Promise<void>;
@@ -238,6 +242,7 @@ export const useStore = create<StoreState>((set, get) => {
     talkLevel: 0,
     talkTargetIds: new Set(),
   talkPaGroupIds: new Set(),
+  talkSource: "mic",
     musicPlaying: false,
     currentMusicId: null,
     currentMusicLogId: null,
@@ -316,6 +321,7 @@ export const useStore = create<StoreState>((set, get) => {
         next.has(id) ? next.delete(id) : next.add(id);
         return { talkPaGroupIds: next };
       }),
+    setTalkSource: (source) => set({ talkSource: source }),
     setRecording: (r) => set({ recording: r }),
     setTalkLevel: (l) => set({ talkLevel: l }),
 
@@ -456,6 +462,7 @@ export const useStore = create<StoreState>((set, get) => {
     startLiveTalk: async () => {
       const ids = get().talkTargetIds;
       const groupIds = get().talkPaGroupIds;
+      const source = get().talkSource;
       if (ids.size === 0 && groupIds.size === 0) {
         addToast("Select endpoints or a PA group first");
         return;
@@ -465,19 +472,25 @@ export const useStore = create<StoreState>((set, get) => {
         const session = await api.talk.start({
           endpointIds: [...ids],
           paGroupIds: [...groupIds],
+          source,
         });
         talkSocket.join(session.id);
         try {
-          await liveTalk.start({
-            onLevel: (l) => set({ talkLevel: l }),
-            onChunk: (pcm, rate) => talkSocket.sendAudio(session.id, pcm, rate),
-          });
+          await liveTalk.start(
+            {
+              onLevel: (l) => set({ talkLevel: l }),
+              onChunk: (pcm, rate) =>
+                talkSocket.sendAudio(session.id, pcm, rate),
+            },
+            source,
+          );
         } catch (e) {
           await api.talk.stop(session.id);
+          const err = e as Error;
           addToast(
-            e instanceof MicAccessError
-              ? e.message
-              : `Microphone access denied: ${(e as Error).message}`,
+            e instanceof MicAccessError || e instanceof DeviceAudioError
+              ? err.message
+              : `${source === "device" ? "Device audio" : "Microphone"} unavailable: ${err.message}`,
           );
           set({ activeTalkId: null, talkMode: null, busy: false });
           return;
