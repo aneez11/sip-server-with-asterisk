@@ -99,6 +99,9 @@ event it calls `PaGroupService.onInitiatorLeft(pageConf)`, which:
 - `GET/POST /api/pa-groups`, `GET/PUT/DELETE /api/pa-groups/:id` — CRUD (session auth).
 - `GET /api/pa-trigger/:extension?caller=<ext>` — internal trigger (shared-secret
   bearer token; exempted from session auth).
+- A group can also be used as a **live talk** target from the console
+  (`POST /api/talk/start { paGroupIds }`) — receivers are expanded server-side and
+  the talk is always one-way. See `docs/design-live-talk.md`.
 
 ## UI — "PA groups" tab
 

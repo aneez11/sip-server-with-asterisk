@@ -35,6 +35,8 @@ export interface TalkSessionView {
   id: string;
   mode: TalkMode;
   endpointIds: number[];
+  /** PA groups that contributed targets to this session. */
+  paGroupIds: number[];
   startedAt: string;
 }
 
@@ -44,6 +46,7 @@ interface TalkSession {
   logId: number;
   endpointIds: number[];
   endpointExtensions: string[];
+  paGroupIds: number[];
   sip: SipUa;
   rtp: RtpSession;
   connected: boolean;
@@ -86,6 +89,7 @@ export class LiveTalkService {
       id: s.id,
       mode: s.mode,
       endpointIds: s.endpointIds,
+      paGroupIds: s.paGroupIds,
       startedAt: s.startedAt.toISOString(),
     }));
   }
@@ -96,32 +100,74 @@ export class LiveTalkService {
     if (s) s.socketId = socketId;
   }
 
-  /** Start a live talk to the given endpoints. */
-  async start(endpointIds: number[]): Promise<TalkSessionView> {
+  /**
+   * Start a live talk to the given endpoints, optionally via PA groups.
+   *
+   * A PA group expands to its receiver endpoints: selecting groups is a shortcut
+   * for "talk to everyone in this group", and its targets are merged (deduped)
+   * with any individually selected endpoints. Any group involvement forces the
+   * one-way `live` mode — a PA group is a broadcast even when it has a single
+   * receiver, so it never turns into a two-way call by accident.
+   */
+  async start(
+    endpointIds: number[],
+    paGroupIds: number[] = [],
+  ): Promise<TalkSessionView> {
+    const groups =
+      paGroupIds.length > 0
+        ? await prisma.paGroup.findMany({
+            where: { id: { in: paGroupIds } },
+            include: { receivers: true },
+          })
+        : [];
+    if (paGroupIds.length > 0 && groups.length === 0)
+      throw new ApiError(422, "PA group not found");
+
+    const groupEndpointIds = groups
+      .flatMap((g) => g.receivers.map((r) => r.endpointId))
+      .filter((id) => Number.isFinite(id));
+
+    const selected = [...new Set([...endpointIds, ...groupEndpointIds])];
+    if (selected.length === 0)
+      throw new ApiError(422, "Select at least one endpoint or PA group");
+
     const endpoints = await onlineEndpoints(
       this.ami,
       await prisma.endpoint.findMany({
-        where: { id: { in: endpointIds }, isActive: true },
+        where: { id: { in: selected }, isActive: true },
       }),
     );
     if (endpoints.length === 0)
       throw new ApiError(422, "No online endpoints in selection");
 
-    const mode: TalkMode = endpoints.length === 1 ? "twoway" : "live";
+    // Groups always broadcast one-way; only a plain single-endpoint selection is
+    // a two-way call.
+    const mode: TalkMode =
+      groups.length === 0 && endpoints.length === 1 ? "twoway" : "live";
+    const groupLabel =
+      groups.length === 1 ? groups[0].name : `${groups.length} PA groups`;
     const title =
       mode === "twoway"
         ? `Two-way call ${fmtClock()}`
-        : `Live talk ${fmtClock()}`;
+        : groups.length > 0
+          ? `Live talk → ${groupLabel} ${fmtClock()}`
+          : `Live talk ${fmtClock()}`;
 
+    const resolvedIds = endpoints.map((e) => e.id);
     const log = await prisma.broadcastLog.create({
-      data: { status: "pending", endpointIds, title, startedAt: new Date() },
+      data: {
+        status: "pending",
+        endpointIds: resolvedIds,
+        title,
+        startedAt: new Date(),
+      },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
       id: log.id,
       status: "pending",
       zoneId: null,
       title: log.title,
-      endpointIds,
+      endpointIds: resolvedIds,
       durationSec: log.durationSec,
       startedAt: log.startedAt,
       endedAt: null,
@@ -146,8 +192,9 @@ export class LiveTalkService {
       id,
       mode,
       logId: log.id,
-      endpointIds,
+      endpointIds: resolvedIds,
       endpointExtensions: endpoints.map((e) => e.extension),
+      paGroupIds,
       sip,
       rtp,
       connected: false,
@@ -216,7 +263,8 @@ export class LiveTalkService {
       return {
         id,
         mode,
-        endpointIds,
+        endpointIds: resolvedIds,
+        paGroupIds,
         startedAt: session.startedAt.toISOString(),
       };
     } catch (e) {

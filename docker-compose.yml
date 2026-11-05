@@ -20,11 +20,21 @@ services:
       ASTERISK_ENDPOINTS_CONF_PATH: /etc/asterisk/endpoints.conf
       ANNOUNCEMENTS_DIR: /announcements
       WEB_DIST: /app/web/dist
+      # HTTPS listener so Live Talk's microphone works — browsers only expose
+      # navigator.mediaDevices in a secure context (HTTPS or localhost). Set
+      # HTTPS_PORT=0 in .env to disable and run HTTP-only.
+      HTTPS_PORT: ${HTTPS_PORT:-3443}
+      TLS_CERT_PATH: /app/certs/server.pem
+      TLS_KEY_PATH: /app/certs/server.key
     ports:
       - "3001:3001"
+      - "${HTTPS_PORT:-3443}:${HTTPS_PORT:-3443}"
     volumes:
       - ./asterisk-config:/etc/asterisk
       - ./announcements:/announcements
+      # Persists the self-signed TLS cert across container rebuilds so devices
+      # don't have to re-accept the browser warning after every deploy.
+      - infinity-certs:/app/certs
     depends_on:
       mysql:
         condition: service_healthy
@@ -157,6 +167,7 @@ services:
 
 volumes:
   infinity-mysql:
+  infinity-certs:
 
 networks:
   default:

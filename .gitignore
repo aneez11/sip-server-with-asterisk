@@ -5,3 +5,5 @@ build
 *.log
 .DS_Store
 prisma/*.db
+# agent/tooling caches (local only)
+.codebase-memory/

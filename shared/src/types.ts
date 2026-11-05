@@ -130,6 +130,23 @@ export interface AuthResponse {
 
 // ---- live talk (record-then-play) -----------------------------------------
 
+export interface TalkStartRequest {
+  /** Individually selected endpoint ids. */
+  endpointIds?: number[];
+  /** PA group ids — every receiver of each group is added as a live target. */
+  paGroupIds?: number[];
+}
+
+export interface TalkSessionView {
+  id: string;
+  mode: "live" | "twoway";
+  /** Resolved endpoint ids actually being talked to (groups expanded). */
+  endpointIds: number[];
+  /** PA groups that contributed targets to this session. */
+  paGroupIds: number[];
+  startedAt: string;
+}
+
 export interface TalkStartResponse {
   broadcastLogId: number;
 }

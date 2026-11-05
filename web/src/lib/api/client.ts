@@ -8,6 +8,8 @@ import type {
   Music,
   OverviewResponse,
   PaGroup,
+  TalkSessionView,
+  TalkStartRequest,
   Zone,
 } from "@infinity/shared";
 
@@ -258,15 +260,13 @@ export const api = {
   },
 
   talk: {
-    start: (endpointIds: number[]) =>
-      request<{
-        id: string;
-        mode: "live" | "twoway";
-        endpointIds: number[];
-        startedAt: string;
-      }>("/api/talk/start", {
+    start: (payload: TalkStartRequest) =>
+      request<TalkSessionView>("/api/talk/start", {
         method: "POST",
-        body: JSON.stringify({ endpointIds }),
+        body: JSON.stringify({
+          endpointIds: payload.endpointIds ?? [],
+          paGroupIds: payload.paGroupIds ?? [],
+        }),
       }),
     stop: (talkId?: string) =>
       request<{ stopped: number }>("/api/talk/stop", {

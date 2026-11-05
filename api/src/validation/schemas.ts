@@ -51,6 +51,19 @@ export const announcementSchema = z.object({
   name: z.string().max(120).optional(),
 });
 
-export const talkSchema = z.object({
-  endpointIds: z.array(z.coerce.number().int().positive()).min(1),
-});
+export const talkSchema = z
+  .object({
+    endpointIds: z
+      .array(z.coerce.number().int().positive())
+      .optional()
+      .default([]),
+    // PA groups: every receiver of each group becomes a live talk target.
+    paGroupIds: z
+      .array(z.coerce.number().int().positive())
+      .optional()
+      .default([]),
+  })
+  .refine((v) => v.endpointIds.length > 0 || v.paGroupIds.length > 0, {
+    message: "Select at least one endpoint or PA group",
+    path: ["endpointIds"],
+  });

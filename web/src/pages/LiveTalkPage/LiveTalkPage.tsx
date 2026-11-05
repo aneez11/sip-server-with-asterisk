@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { Radio, Square, PhoneCall } from 'lucide-react';
+import { Radio, Square, PhoneCall, ShieldAlert } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
+import { suggestedHttpsOrigin } from '@/lib/mic';
 
 const METER_BARS = 24;
 
@@ -10,6 +11,8 @@ export const LiveTalkPage = () => {
   const recording = useStore((s) => s.recording);
   const talkMode = useStore((s) => s.talkMode);
   const talkTargetIds = useStore((s) => s.talkTargetIds);
+  const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
+  const paGroups = useStore((s) => s.paGroups);
   const busy = useStore((s) => s.busy);
   const startLiveTalk = useStore((s) => s.startLiveTalk);
   const stopLiveTalk = useStore((s) => s.stopLiveTalk);
@@ -37,15 +40,42 @@ export const LiveTalkPage = () => {
   const onlineCount = endpoints.filter((e) => e.registered).length;
   const twoway = talkMode === 'twoway';
 
+  // Live talk can target endpoints, PA groups, or both — a PA group counts as
+  // every one of its receivers, so the summary reflects the resolved fan-out.
+  const groupReceiverIds = paGroups
+    .filter((g) => talkPaGroupIds.has(g.id))
+    .flatMap((g) => g.receiverEndpointIds ?? []);
+  const targetCount = new Set([...talkTargetIds, ...groupReceiverIds]).size;
+  const groupCount = talkPaGroupIds.size;
+
   return (
     <div className="flex flex-col h-full gap-4">
+      {!window.isSecureContext && (
+        <div className="flex-shrink-0 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <ShieldAlert className="h-4 w-4 mt-0.5 text-amber-500 flex-shrink-0" />
+          <div className="text-xs leading-relaxed">
+            <span className="font-medium">Microphone blocked — this page is not a secure context.</span>{' '}
+            Browsers hide the microphone API on plain HTTP, so Live Talk cannot record here.
+            Open{' '}
+            <a className="underline font-medium" href={`${suggestedHttpsOrigin()}${window.location.pathname}`}>
+              {suggestedHttpsOrigin()}
+            </a>{' '}
+            instead.
+          </div>
+        </div>
+      )}
+
       <div className="flex-shrink-0">
         <span className="text-xs text-muted-foreground">
           {recording
             ? twoway
               ? 'Two-way call in progress — talk and listen to the selected phone'
-              : `Live broadcast — ${talkTargetIds.size} target${talkTargetIds.size === 1 ? '' : 's'} hearing your mic live`
-            : `Select endpoints from the right panel (${onlineCount} registered), then Start talk. One phone endpoint = two-way call; multiple endpoints = live one-way broadcast.`}
+              : `Live broadcast — ${targetCount} target${targetCount === 1 ? '' : 's'} hearing your mic live${
+                  groupCount > 0
+                    ? ` via ${groupCount} PA group${groupCount === 1 ? '' : 's'}`
+                    : ''
+                }`
+            : `Select endpoints or PA groups from the right panel (${onlineCount} registered), then Start talk. One phone endpoint = two-way call; multiple endpoints or a PA group = live one-way broadcast.`}
         </span>
       </div>
 

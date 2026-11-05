@@ -8,6 +8,7 @@ import { config } from "../config.js";
 import {
   endpointCreateSchema,
   endpointUpdateSchema,
+  talkSchema,
 } from "../validation/schemas.js";
 import { ApiError } from "../errors.js";
 import type { EndpointService } from "../services/endpoints.js";
@@ -341,18 +342,17 @@ export function createBroadcastRouter(broadcast: BroadcastService): Router {
 export function createTalkRouter(liveTalk: LiveTalkService): Router {
   const router = Router();
 
-  // Start a live talk: >=1 endpoints broadcasts one-way (operator joins the
-  // paging conf as the live marked speaker); exactly 1 phone endpoint becomes
-  // a two-way call.
+  // Start a live talk: >=1 endpoints (or PA groups, which expand to their
+  // receiver endpoints) broadcast one-way — the operator joins the paging conf
+  // as the live marked speaker. Exactly one phone endpoint and no PA group
+  // becomes a two-way call.
   router.post("/start", async (req, res, next) => {
     try {
-      const idsRaw = (req.body as { endpointIds?: unknown } | undefined)
-        ?.endpointIds;
-      const ids = (Array.isArray(idsRaw) ? idsRaw : [idsRaw])
-        .map(Number)
-        .filter((n: number) => Number.isFinite(n));
-      if (ids.length === 0) throw new ApiError(422, "endpointIds is required");
-      const session = await liveTalk.start(ids);
+      const parsed = talkSchema.parse(req.body ?? {});
+      const session = await liveTalk.start(
+        parsed.endpointIds,
+        parsed.paGroupIds,
+      );
       res.status(201).json({ ...session, broadcastLogId: undefined });
     } catch (e) {
       next(e);

@@ -6,6 +6,8 @@ import session from "express-session";
 import MySQLStoreFactory from "express-mysql-session";
 import multer from "multer";
 import { createServer } from "node:http";
+import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
+import { existsSync, readFileSync } from "node:fs";
 import { Server as SocketServer } from "socket.io";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db.js";
@@ -104,6 +106,37 @@ async function main() {
   const io = new SocketServer(httpServer, {
     cors: { origin: true, credentials: true },
   });
+
+  // Optional HTTPS listener. Live Talk streams the operator's microphone, and
+  // browsers only expose navigator.mediaDevices in a secure context — over plain
+  // HTTP on a LAN IP, navigator.mediaDevices is undefined and getUserMedia fails
+  // with "Cannot read properties of undefined". HTTPS is also required for the
+  // AudioWorklet mic capture. HTTP stays enabled for the REST/socket clients that
+  // already point at port 3001.
+  let httpsServer: HttpsServer | undefined;
+  if (config.tls.port > 0) {
+    if (existsSync(config.tls.certPath) && existsSync(config.tls.keyPath)) {
+      try {
+        httpsServer = createHttpsServer(
+          {
+            cert: readFileSync(config.tls.certPath),
+            key: readFileSync(config.tls.keyPath),
+          },
+          app,
+        );
+        // Same handler on both listeners so Socket.IO clients work either way.
+        io.attach(httpsServer);
+      } catch (err) {
+        console.warn(
+          `HTTPS disabled — could not load TLS material: ${(err as Error).message}`,
+        );
+      }
+    } else {
+      console.warn(
+        `HTTPS disabled — TLS files not found (${config.tls.certPath}, ${config.tls.keyPath})`,
+      );
+    }
+  }
 
   app.use(express.json());
 
@@ -288,6 +321,30 @@ async function main() {
 
   // Static web (built SPA)
   const webDist = path.resolve(config.webDist);
+
+  // Publish the local root CA so devices can trust the HTTPS listener once
+  // (install ca.pem) instead of clicking through the warning on every browser.
+  app.get("/ca.pem", (_req, res) => {
+    if (!existsSync(config.tls.caPath)) {
+      return res.status(404).json({ message: "CA certificate not available" });
+    }
+    res.type("application/x-pem-file").send(readFileSync(config.tls.caPath));
+  });
+
+  // Send browser navigations to the HTTPS origin: on plain HTTP the microphone
+  // API (navigator.mediaDevices) does not exist, so Live Talk would fail there.
+  // Only HTML page loads are redirected — /api, /socket.io and /health keep
+  // working over HTTP for existing clients and the container healthcheck.
+  if (httpsServer && config.tls.redirect) {
+    app.use((req, res, next) => {
+      if (req.secure || req.path.startsWith("/api") || req.path === "/health")
+        return next();
+      if (!req.accepts("html")) return next();
+      const host = (req.headers.host ?? "").split(":")[0] || config.hostIp;
+      return res.redirect(302, `https://${host}:${config.tls.port}${req.originalUrl}`);
+    });
+  }
+
   app.use(express.static(webDist));
 
   // JSON error handler — never let Express render HTML error pages for /api.
@@ -344,6 +401,14 @@ async function main() {
   httpServer.listen(config.port, () => {
     console.log(`Infinity Echo API running on port ${config.port}`);
   });
+
+  if (httpsServer) {
+    httpsServer.listen(config.tls.port, () => {
+      console.log(
+        `Infinity Echo HTTPS on port ${config.tls.port} (open this origin for Live Talk — microphone needs a secure context)`,
+      );
+    });
+  }
 }
 
 main().catch((err) => {

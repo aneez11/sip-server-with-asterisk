@@ -1,4 +1,4 @@
-import { Mic, Radio, History, Music } from "lucide-react";
+import { Mic, Radio, History, Music, Users } from "lucide-react";
 import { useStore } from "@/store";
 import { Badge } from "@/components/Badge/Badge";
 import { Card, CardContent } from "@/components/Card/Card";
@@ -20,6 +20,9 @@ export const RightRail = () => {
   const recording = useStore((s) => s.recording);
   const talkTargetIds = useStore((s) => s.talkTargetIds);
   const toggleTalkTarget = useStore((s) => s.toggleTalkTarget);
+  const paGroups = useStore((s) => s.paGroups);
+  const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
+  const toggleTalkPaGroup = useStore((s) => s.toggleTalkPaGroup);
   const selectedZoneIds = useStore((s) => s.selectedZoneIds);
   const zones = useStore((s) => s.zones);
   const musicPlaying = useStore((s) => s.musicPlaying);
@@ -88,10 +91,89 @@ export const RightRail = () => {
       <ScrollArea className="flex-1 px-3 py-2">
         {activeTab === "talk" && (
           <>
+            {paGroups.length > 0 && (
+              <>
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1 pb-1.5">
+                  PA groups
+                </div>
+                {paGroups.map((g) => {
+                  const selected = talkPaGroupIds.has(g.id);
+                  const receivers = g.receiverEndpointIds ?? [];
+                  const onlineCount = endpoints.filter(
+                    (e) => receivers.includes(e.id) && e.registered && e.isActive,
+                  ).length;
+                  return (
+                    <button
+                      key={`pa-${g.id}`}
+                      type="button"
+                      onClick={() => toggleTalkPaGroup(g.id)}
+                      title={`Talk live to every receiver in ${g.name}`}
+                      className={cn(
+                        "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors border mb-1.5",
+                        selected && recording && "bg-red-500/10 border-red-500",
+                        selected &&
+                          !recording &&
+                          "bg-primary/5 border-primary/40",
+                        !selected &&
+                          "bg-muted/50 border-transparent hover:border-primary/50",
+                      )}
+                    >
+                      <Users
+                        size={14}
+                        className={cn(
+                          "flex-shrink-0",
+                          selected ? "text-primary" : "text-muted-foreground",
+                        )}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate">
+                          {g.name}
+                        </div>
+                        <div className="text-muted-foreground text-[10px] truncate">
+                          {receivers.length} receiver
+                          {receivers.length === 1 ? "" : "s"} · {onlineCount}{" "}
+                          online · ext {g.extension}
+                        </div>
+                      </div>
+                      <Badge
+                        variant={
+                          selected && recording
+                            ? "destructive"
+                            : selected
+                              ? "default"
+                              : "outline"
+                        }
+                        className={cn(
+                          "text-[10px] px-1.5 py-0 flex-shrink-0",
+                          !selected && "text-muted-foreground",
+                        )}
+                      >
+                        {selected && recording
+                          ? "Live"
+                          : selected
+                            ? "Selected"
+                            : "Group"}
+                      </Badge>
+                    </button>
+                  );
+                })}
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1 pt-2 pb-1.5">
+                  Endpoints
+                </div>
+              </>
+            )}
             {endpoints.map((e) => {
               const online = e.registered && e.isActive;
               const live = talkTargetIds.has(e.id) && recording;
               const targeted = talkTargetIds.has(e.id);
+              const viaGroup =
+                !targeted &&
+                paGroups.some(
+                  (g) =>
+                    talkPaGroupIds.has(g.id) &&
+                    (g.receiverEndpointIds ?? []).includes(e.id),
+                );
+              const effectiveTarget = targeted || viaGroup;
               return (
                 <button
                   key={e.id}
@@ -100,7 +182,9 @@ export const RightRail = () => {
                   onClick={() => toggleTalkTarget(e.id)}
                   title={
                     online
-                      ? "Click to talk to this endpoint"
+                      ? viaGroup
+                        ? "Selected via a PA group"
+                        : "Click to talk to this endpoint"
                       : "Endpoint not registered"
                   }
                   className={cn(
@@ -110,11 +194,11 @@ export const RightRail = () => {
                     online && live && "bg-red-500/10 border-red-500",
                     online &&
                       !live &&
-                      targeted &&
+                      effectiveTarget &&
                       "bg-primary/5 border-primary/40",
                     online &&
                       !live &&
-                      !targeted &&
+                      !effectiveTarget &&
                       "bg-muted/50 border-transparent hover:border-primary/50",
                   )}
                 >
@@ -134,15 +218,16 @@ export const RightRail = () => {
                     </div>
                     <div className="text-muted-foreground text-[10px] truncate">
                       {e.extension} · {e.location || "—"}
+                      {viaGroup && " · via group"}
                     </div>
                   </div>
                   <Badge
                     variant={
-                      live ? "destructive" : targeted ? "default" : "outline"
+                      live ? "destructive" : effectiveTarget ? "default" : "outline"
                     }
                     className={cn(
                       "text-[10px] px-1.5 py-0 flex-shrink-0",
-                      !live && !targeted && "text-muted-foreground",
+                      !live && !effectiveTarget && "text-muted-foreground",
                     )}
                   >
                     {live
@@ -150,7 +235,9 @@ export const RightRail = () => {
                       : online
                         ? targeted
                           ? "Selected"
-                          : "Online"
+                          : viaGroup
+                            ? "In group"
+                            : "Online"
                         : "Offline"}
                   </Badge>
                 </button>

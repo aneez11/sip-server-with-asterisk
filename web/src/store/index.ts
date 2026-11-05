@@ -12,6 +12,7 @@ import type {
   Zone,
 } from "@infinity/shared";
 import { api, ApiError } from "@/lib/api/client";
+import { MicAccessError, requireMicDevices } from "@/lib/mic";
 import { talkSocket } from "@/lib/api/socket";
 import { liveTalk } from "@/recorder/recorder";
 import { webmToWav } from "@/lib/audio";
@@ -49,6 +50,8 @@ interface StoreState {
   busy: boolean;
   talkLevel: number;
   talkTargetIds: Set<number>;
+  /** PA groups selected as live talk targets (expanded to receivers by the API). */
+  talkPaGroupIds: Set<number>;
 
   musicPlaying: boolean;
   currentMusicId: number | null;
@@ -73,6 +76,7 @@ interface StoreState {
   toggleZone: (id: number) => void;
   setTalkTargets: (ids: number[]) => void;
   toggleTalkTarget: (id: number) => void;
+  toggleTalkPaGroup: (id: number) => void;
   setRecording: (r: boolean) => void;
   setTalkLevel: (l: number) => void;
   startLiveTalk: () => Promise<void>;
@@ -233,6 +237,7 @@ export const useStore = create<StoreState>((set, get) => {
     busy: false,
     talkLevel: 0,
     talkTargetIds: new Set(),
+  talkPaGroupIds: new Set(),
     musicPlaying: false,
     currentMusicId: null,
     currentMusicLogId: null,
@@ -303,6 +308,14 @@ export const useStore = create<StoreState>((set, get) => {
         next.has(id) ? next.delete(id) : next.add(id);
         return { talkTargetIds: next };
       }),
+    // PA groups are an alternative target type for live talk: selecting a group
+    // talks to every receiver in it (the API expands the group).
+    toggleTalkPaGroup: (id) =>
+      set((s) => {
+        const next = new Set(s.talkPaGroupIds);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return { talkPaGroupIds: next };
+      }),
     setRecording: (r) => set({ recording: r }),
     setTalkLevel: (l) => set({ talkLevel: l }),
 
@@ -368,11 +381,15 @@ export const useStore = create<StoreState>((set, get) => {
       let mediaRecorder: MediaRecorder;
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await requireMicDevices().getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       } catch (e) {
         set({ recordingAnnouncement: false });
-        addToast(`Microphone access denied: ${(e as Error).message}`);
+        addToast(
+          e instanceof MicAccessError
+            ? e.message
+            : `Microphone access denied: ${(e as Error).message}`,
+        );
         return null;
       }
       const chunks: BlobPart[] = [];
@@ -438,13 +455,17 @@ export const useStore = create<StoreState>((set, get) => {
     },
     startLiveTalk: async () => {
       const ids = get().talkTargetIds;
-      if (ids.size === 0) {
-        addToast("Select endpoints first");
+      const groupIds = get().talkPaGroupIds;
+      if (ids.size === 0 && groupIds.size === 0) {
+        addToast("Select endpoints or a PA group first");
         return;
       }
       set({ busy: true });
       try {
-        const session = await api.talk.start([...ids]);
+        const session = await api.talk.start({
+          endpointIds: [...ids],
+          paGroupIds: [...groupIds],
+        });
         talkSocket.join(session.id);
         try {
           await liveTalk.start({
@@ -453,7 +474,11 @@ export const useStore = create<StoreState>((set, get) => {
           });
         } catch (e) {
           await api.talk.stop(session.id);
-          addToast(`Microphone access denied: ${(e as Error).message}`);
+          addToast(
+            e instanceof MicAccessError
+              ? e.message
+              : `Microphone access denied: ${(e as Error).message}`,
+          );
           set({ activeTalkId: null, talkMode: null, busy: false });
           return;
         }
@@ -463,10 +488,15 @@ export const useStore = create<StoreState>((set, get) => {
           recording: true,
           busy: false,
         });
-        addToast(
-          `Live talk started (${session.mode === "twoway" ? "two-way call" : "live broadcast"})`,
-          "success",
-        );
+        const targetSummary =
+          session.mode === "twoway"
+            ? "two-way call"
+            : `${session.endpointIds.length} endpoint${session.endpointIds.length === 1 ? "" : "s"} live${
+                session.paGroupIds.length > 0
+                  ? ` (${session.paGroupIds.length} PA group${session.paGroupIds.length === 1 ? "" : "s"})`
+                  : ""
+              }`;
+        addToast(`Live talk started (${targetSummary})`, "success");
       } catch (e) {
         addToast((e as Error).message);
         set({ busy: false });

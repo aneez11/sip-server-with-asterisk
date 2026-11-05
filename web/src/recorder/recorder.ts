@@ -5,6 +5,8 @@
 // carry. The worklet posts raw Float32 blocks; we convert to Int16 and hand each
 // chunk to the caller, which streams it to the API over Socket.IO.
 
+import { requireMicDevices } from '@/lib/mic';
+
 let audioCtx: AudioContext | null = null;
 let captureNode: AudioWorkletNode | null = null;
 let source: MediaStreamAudioSourceNode | null = null;
@@ -32,7 +34,7 @@ function f32ToPcm16(src: Float32Array): Int16Array {
 export const liveTalk = {
   start: async (handlers: LiveTalkHandlers): Promise<void> => {
     if (audioCtx) return;
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const micStream = await requireMicDevices().getUserMedia({ audio: true });
     const ctx = new AudioContext();
     try {
       await ctx.audioWorklet.addModule(WORKLET_URL);
