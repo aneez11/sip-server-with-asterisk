@@ -28,6 +28,7 @@ import { pcm16ToF32, resampleF32, f32ToPcm16 } from "../lib/resample.js";
 import { originateMemberLegs } from "../lib/member-legs.js";
 import { onlineEndpoints } from "../lib/online-endpoints.js";
 import { MonitorService } from "./monitor.js";
+import { registerTalkLog, unregisterTalkLog } from "./talk-registry.js";
 
 export type TalkMode = "live" | "twoway";
 export type TalkSource = "mic" | "device";
@@ -54,6 +55,8 @@ interface TalkSession {
   rtp: RtpSession;
   connected: boolean;
   socketId: string | null;
+  /** Pending teardown after the owning socket dropped (see detachSocket). */
+  detachTimer?: NodeJS.Timeout | null;
   pageConf: string | null;
   startedAt: Date;
   /** Monitor call id (talk:<session id>). */
@@ -61,6 +64,13 @@ interface TalkSession {
 }
 
 const SOCKET_AUDIO_EVENT = "talk:audio";
+
+/**
+ * How long a talk survives after its socket drops. A backgrounded tab throttles
+ * timers (Chrome: down to once per minute), which can miss a Socket.IO heartbeat
+ * without the operator doing anything wrong.
+ */
+const DETACH_GRACE_MS = 120_000;
 
 function getLocalIp(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -101,7 +111,14 @@ export class LiveTalkService {
   /** Associate a socket with an active talk (replaces any previous owner). */
   join(socketId: string, talkId: string): void {
     const s = this.sessions.get(talkId);
-    if (s) s.socketId = socketId;
+    if (!s) return;
+    s.socketId = socketId;
+    // A re-attach (e.g. the tab came back / the socket reconnected) cancels the
+    // pending teardown so the broadcast continues where it left off.
+    if (s.detachTimer) {
+      clearTimeout(s.detachTimer);
+      s.detachTimer = null;
+    }
   }
 
   /**
@@ -174,6 +191,8 @@ export class LiveTalkService {
         startedAt: new Date(),
       },
     });
+    // Exempt from the AMI listener's orphan sweep while the talk is on air.
+    registerTalkLog(log.id);
     this.io.emit(EVENTS.broadcastUpdated, {
       id: log.id,
       status: "pending",
@@ -273,6 +292,9 @@ export class LiveTalkService {
       }
       session.connected = true;
       this.sessions.set(id, session);
+      console.log(
+        `[talk] start id=${id} mode=${mode} source=${source} endpoints=${resolvedIds.length} groups=${paGroupIds.length} log=${log.id}`,
+      );
       return {
         id,
         mode,
@@ -294,10 +316,20 @@ export class LiveTalkService {
   }
 
   /** Stop a talk: hang up the operator leg AND the member legs (live mode). */
-  async stop(talkId?: string): Promise<{ stopped: number }> {
+  async stop(
+    talkId?: string,
+    reason = "user",
+  ): Promise<{ stopped: number }> {
     let stopped = 0;
     for (const [id, s] of [...this.sessions]) {
       if (talkId && id !== talkId) continue;
+      console.log(
+        `[talk] stop id=${id} reason=${reason} mode=${s.mode} source=${s.source} endpoints=${s.endpointIds.length} groups=${s.paGroupIds.length}`,
+      );
+      if (s.detachTimer) {
+        clearTimeout(s.detachTimer);
+        s.detachTimer = null;
+      }
       s.sip.hangup();
       s.rtp.close();
       this.sessions.delete(id);
@@ -337,7 +369,31 @@ export class LiveTalkService {
       .filter((s) => s.socketId === socketId)
       .map((s) => s.id);
     if (ids.length === 0) return Promise.resolve({ stopped: 0 });
-    return this.stop(ids[0]);
+    return this.stop(ids[0], "socket-forced");
+  }
+
+  /**
+   * Called when the owning socket drops. A backgrounded browser tab has its
+   * timers throttled, which can make Socket.IO's heartbeat miss and tear the
+   * connection down mid-broadcast. Killing the call on the spot silently cuts
+   * the operator off while the page still shows "capturing", so the session is
+   * kept alive for a grace period: if any socket re-joins the talk in time the
+   * broadcast simply continues, otherwise it is stopped and history is finalised.
+   */
+  detachSocket(socketId: string): void {
+    for (const s of this.sessions.values()) {
+      if (s.socketId !== socketId) continue;
+      s.socketId = null;
+      if (s.detachTimer) clearTimeout(s.detachTimer);
+      s.detachTimer = setTimeout(() => {
+        // Still detached after the grace period: really stop it.
+        const current = this.sessions.get(s.id);
+        if (current && !current.socketId)
+          void this.stop(current.id, "socket-detached");
+      }, DETACH_GRACE_MS);
+      // Do not keep the process alive just for this timer.
+      s.detachTimer.unref?.();
+    }
   }
 
   /** Hang up operator UA channels orphaned by a previous API process restart. */
@@ -383,6 +439,9 @@ export class LiveTalkService {
   }
 
   private async finalize(logId: number, status: string): Promise<void> {
+    // The talk owns this log for as long as it runs; once finalised the sweep
+    // may treat it as history again.
+    unregisterTalkLog(logId);
     const current = await prisma.broadcastLog.findUnique({
       where: { id: logId },
       select: { status: true, startedAt: true },

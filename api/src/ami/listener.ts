@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import type { Server as SocketServer } from "socket.io";
 import { EVENTS } from "@infinity/shared";
 import { MonitorService } from "../live/monitor.js";
+import { activeTalkLogs } from "../live/talk-registry.js";
 
 interface PageMember {
   channel?: string;
@@ -576,7 +577,8 @@ export class AmiListener {
       where: {
         status: "pending",
         startedAt: { lt: new Date(cutoff) },
-        id: { notIn: trackedIds },
+        // Live talk owns its log lifecycle and can legitimately run for hours.
+        id: { notIn: [...trackedIds, ...activeTalkLogs()] },
       },
     });
     for (const log of orphans) {

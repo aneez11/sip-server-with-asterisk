@@ -20,6 +20,12 @@ export interface LiveTalkHandlers {
   onLevel?: (level: number) => void;
   /** Called with each mic block (Int16 mono at the AudioContext sample rate). */
   onChunk: (pcm: Int16Array, rate: number) => void;
+  /**
+   * The capture stopped by itself — the operator pressed Chrome's "Stop
+   * sharing", closed the shared tab, or the browser ended the mic stream. The
+   * caller must stop the talk instead of leaving a silent session on air.
+   */
+  onCaptureEnded?: (reason: string) => void;
 }
 
 function f32ToPcm16(src: Float32Array): Int16Array {
@@ -128,6 +134,22 @@ export const liveTalk = {
 
     source = ctx.createMediaStreamSource(captureStream);
     source.connect(node);
+
+    // Surface a capture that ends on its own (Chrome "Stop sharing", shared tab
+    // closed, device unplugged). Without this the session looks live while
+    // sending nothing.
+    const ended = (why: string) => {
+      if (!audioCtx) return; // already stopped by the caller
+      handlers.onCaptureEnded?.(why);
+    };
+    captureStream.getAudioTracks().forEach((track) => {
+      track.addEventListener('ended', () =>
+        ended(captureSource === 'device' ? 'Device audio sharing stopped' : 'Microphone disconnected'),
+      );
+    });
+    ctx.addEventListener('statechange', () => {
+      if (ctx.state === 'closed') ended('Audio capture closed');
+    });
 
     stream = captureStream;
     audioCtx = ctx;

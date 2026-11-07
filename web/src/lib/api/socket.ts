@@ -6,6 +6,8 @@ export type SocketHandlers = {
   onEndpointsChanged?: () => void;
   onTalkAudio?: (talkId: string, pcm: Int16Array, rate: number) => void;
   onCallsUpdated?: (snapshot: CallsSnapshot) => void;
+  /** Socket dropped (e.g. throttled background tab) or came back. */
+  onConnectionChange?: (connected: boolean) => void;
 };
 
 let socket: Socket | null = null;
@@ -28,11 +30,23 @@ export function connectSocket(handlers: SocketHandlers): () => void {
       h.onTalkAudio?.(payload.talkId, new Int16Array(payload.data), payload.rate);
     }
   });
+
+  // Connection lifecycle: a hidden tab can miss a heartbeat, and the operator
+  // must be told rather than left staring at a "capturing" button that no longer
+  // reaches any device.
+  const onConnect = () => h.onConnectionChange?.(true);
+  const onDisconnect = () => h.onConnectionChange?.(false);
+  sock.on('connect', onConnect);
+  sock.on('disconnect', onDisconnect);
+  if (sock.connected) onConnect();
+
   return () => {
     sock.off(EVENTS.broadcastUpdated);
     sock.off(EVENTS.endpointsChanged);
     sock.off(EVENTS.callsUpdated);
     sock.off('talk:audio');
+    sock.off('connect', onConnect);
+    sock.off('disconnect', onDisconnect);
   };
 }
 

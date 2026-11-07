@@ -128,6 +128,31 @@ with the opaque `Cannot read properties of undefined (reading 'getUserMedia')`.
   (`requireMicDevices()`), which throws a `MicAccessError` naming the HTTPS
   origin; Live Talk also shows a persistent banner on an insecure origin.
 
+## Connection resilience (why a talk no longer dies on its own)
+
+A live talk is held by the server, not by the page. Three independent guards keep
+a broadcast from ending while the operator still sees "capturing":
+
+- **Heartbeat tolerance** — Socket.IO runs with `pingInterval: 25 s` and
+  `pingTimeout: 120 s`. A backgrounded tab throttles its timers, and the default
+  20 s timeout used to tear the socket down mid-broadcast.
+- **Grace period** — a socket `disconnect` no longer stops the talk. The session
+  is detached and kept for `DETACH_GRACE_MS` (120 s); any `talk:join` cancels the
+  teardown and the broadcast continues. Only after the grace period does the
+  server stop it (logged as `[talk] stop ... reason=socket-detached`).
+- **Capture-end detection** — the client watches the capture track's `ended`
+  event and the AudioContext `statechange`. If Chrome's "Stop sharing" is used,
+  the shared tab is closed, or the mic is unplugged, the talk is stopped
+  explicitly with a message instead of streaming silence.
+
+While disconnected the UI shows a "Connection lost — broadcast held on the
+server" banner, and on reconnect it re-joins the session and verifies it with
+`GET /api/talk/status` (stopping locally if the server already dropped it).
+
+Active talk logs are also exempt from the AMI listener's orphan sweep
+(`api/src/live/talk-registry.ts`) — previously any talk older than
+`PAGE_DURATION + 30 s` was marked **failed** in history while still on air.
+
 ## Verification
 
 - Two-way to a speaker-with-mic (2002): operator UA in `Dial(PJSIP/2002)`, tone

@@ -62,6 +62,8 @@ export const App = () => {
       },
       onEndpointsChanged: () => void refresh(),
       onCallsUpdated: (snapshot) => useStore.getState().setCalls(snapshot),
+      onConnectionChange: (connected) =>
+        useStore.getState().onTalkConnectionChange(connected),
     });
     return () => {
       clearInterval(t1);

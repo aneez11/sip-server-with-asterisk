@@ -365,7 +365,7 @@ export function createTalkRouter(liveTalk: LiveTalkService): Router {
       const talkId =
         (req.body as { talkId?: string | null } | undefined)?.talkId ??
         undefined;
-      res.json(await liveTalk.stop(talkId));
+      res.json(await liveTalk.stop(talkId, "user"));
     } catch (e) {
       next(e);
     }

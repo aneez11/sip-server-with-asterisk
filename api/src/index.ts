@@ -105,6 +105,13 @@ async function main() {
   const httpServer = createServer(app);
   const io = new SocketServer(httpServer, {
     cors: { origin: true, credentials: true },
+    // Tolerate throttled/backgrounded tabs: Chrome clamps timers to ~1/minute in
+    // a hidden tab, which used to trip the default 20 s ping timeout and tear the
+    // connection down mid-broadcast (the server then hung up the call). A long
+    // pingTimeout keeps the socket alive until the page is visible again, and the
+    // service additionally holds the talk for a grace period on disconnect.
+    pingInterval: 25_000,
+    pingTimeout: 120_000,
   });
 
   // Optional HTTPS listener. Live Talk streams the operator's microphone, and
@@ -314,8 +321,11 @@ async function main() {
         void liveTalk.sendAudio(payload.talkId, pcm, payload.rate);
       },
     );
-    socket.on("disconnect", () => {
-      void liveTalk.stopForSocket(socket.id);
+    socket.on("disconnect", (reason) => {
+      // Not a stop: a backgrounded tab can miss a heartbeat. The service holds
+      // the talk for a grace period and resumes if a socket re-joins.
+      console.log(`[socket] disconnect ${socket.id} reason=${reason}`);
+      liveTalk.detachSocket(socket.id);
     });
   });
 

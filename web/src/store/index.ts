@@ -15,8 +15,7 @@ import type {
 import { api, ApiError } from "@/lib/api/client";
 import { MicAccessError, requireMicDevices } from "@/lib/mic";
 import { talkSocket } from "@/lib/api/socket";
-import { DeviceAudioError, liveTalk } from "@/recorder/recorder";
-import { webmToWav } from "@/lib/audio";
+import { DeviceAudioError, liveTalk } from "@/recorder/recorder";import { webmToWav } from "@/lib/audio";
 
 interface StoreState {
   endpoints: Endpoint[];
@@ -55,6 +54,8 @@ interface StoreState {
   talkPaGroupIds: Set<number>;
   /** Audio source for live talk: microphone or the operator's device audio. */
   talkSource: TalkSource;
+  /** True while the live-talk socket is down (talk is held server-side). */
+  talkConnectionLost: boolean;
 
   musicPlaying: boolean;
   currentMusicId: number | null;
@@ -81,6 +82,8 @@ interface StoreState {
   toggleTalkTarget: (id: number) => void;
   toggleTalkPaGroup: (id: number) => void;
   setTalkSource: (source: TalkSource) => void;
+  /** React to socket connect/disconnect while a talk may be running. */
+  onTalkConnectionChange: (connected: boolean) => void;
   setRecording: (r: boolean) => void;
   setTalkLevel: (l: number) => void;
   startLiveTalk: () => Promise<void>;
@@ -243,6 +246,7 @@ export const useStore = create<StoreState>((set, get) => {
     talkTargetIds: new Set(),
   talkPaGroupIds: new Set(),
   talkSource: "mic",
+  talkConnectionLost: false,
     musicPlaying: false,
     currentMusicId: null,
     currentMusicLogId: null,
@@ -322,6 +326,45 @@ export const useStore = create<StoreState>((set, get) => {
         return { talkPaGroupIds: next };
       }),
     setTalkSource: (source) => set({ talkSource: source }),
+
+    onTalkConnectionChange: (connected) => {
+      const state = get();
+      if (connected) {
+        set({ talkConnectionLost: false });
+        if (!state.activeTalkId) return;
+        // Re-attach to the still-running talk and make sure the server has not
+        // already dropped it (grace period expired).
+        talkSocket.join(state.activeTalkId);
+        void (async () => {
+          try {
+            const status = await api.talk.status();
+            const alive = status.active.some((a) => a.id === state.activeTalkId);
+            if (!alive) {
+              liveTalk.close();
+              set({
+                activeTalkId: null,
+                talkMode: null,
+                recording: false,
+                talkLevel: 0,
+              });
+              addToast("Broadcast ended while the page was disconnected");
+            } else {
+              addToast("Connection restored — broadcast resumed", "success");
+            }
+          } catch {
+            // Status check failed; keep the session and retry on next event.
+          }
+        })();
+        return;
+      }
+      if (!state.activeTalkId) return;
+      // Do NOT stop the talk: the server holds it for two minutes. Audio chunks
+      // are dropped meanwhile, so warn the operator instead.
+      set({ talkConnectionLost: true });
+      addToast(
+        "Connection lost — keeping the broadcast open. It resumes when this page reconnects.",
+      );
+    },
     setRecording: (r) => set({ recording: r }),
     setTalkLevel: (l) => set({ talkLevel: l }),
 
@@ -481,6 +524,10 @@ export const useStore = create<StoreState>((set, get) => {
               onLevel: (l) => set({ talkLevel: l }),
               onChunk: (pcm, rate) =>
                 talkSocket.sendAudio(session.id, pcm, rate),
+              onCaptureEnded: (reason) => {
+                addToast(`${reason} — stopping the broadcast`);
+                void get().stopLiveTalk();
+              },
             },
             source,
           );
@@ -532,6 +579,7 @@ export const useStore = create<StoreState>((set, get) => {
         recording: false,
         talkLevel: 0,
         busy: false,
+        talkConnectionLost: false,
       });
     },
 

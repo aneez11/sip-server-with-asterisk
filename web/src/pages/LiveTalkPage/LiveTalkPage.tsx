@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Radio, Square, PhoneCall, ShieldAlert, Mic, MonitorSpeaker } from 'lucide-react';
+import { Radio, Square, PhoneCall, ShieldAlert, Mic, MonitorSpeaker, WifiOff } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
 import { suggestedHttpsOrigin } from '@/lib/mic';
@@ -14,6 +14,7 @@ export const LiveTalkPage = () => {
   const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
   const talkSource = useStore((s) => s.talkSource);
   const setTalkSource = useStore((s) => s.setTalkSource);
+  const talkConnectionLost = useStore((s) => s.talkConnectionLost);
   const paGroups = useStore((s) => s.paGroups);
   const busy = useStore((s) => s.busy);
   const startLiveTalk = useStore((s) => s.startLiveTalk);
@@ -52,6 +53,16 @@ export const LiveTalkPage = () => {
 
   return (
     <div className="flex flex-col h-full gap-4">
+      {talkConnectionLost && (
+        <div className="flex-shrink-0 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <WifiOff className="h-4 w-4 mt-0.5 text-amber-500 flex-shrink-0" />
+          <div className="text-xs leading-relaxed">
+            <span className="font-medium">Connection lost.</span> The broadcast is
+            being held on the server for two minutes and resumes when this page
+            reconnects. Keep this tab open.
+          </div>
+        </div>
+      )}
       {!window.isSecureContext && (
         <div className="flex-shrink-0 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
           <ShieldAlert className="h-4 w-4 mt-0.5 text-amber-500 flex-shrink-0" />
@@ -68,8 +79,7 @@ export const LiveTalkPage = () => {
       )}
 
       <div className="flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {recording
+        <span className="text-xs text-muted-foreground">          {recording
             ? twoway
               ? 'Two-way call in progress — talk and listen to the selected phone'
               : `Live broadcast — ${targetCount} target${targetCount === 1 ? '' : 's'} hearing your mic live${
