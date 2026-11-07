@@ -11,6 +11,7 @@ import {
   talkSchema,
   cameraConfigSchema,
   cameraStartSchema,
+  cameraTestSchema,
 } from "../validation/schemas.js";
 import { ApiError } from "../errors.js";
 import type { EndpointService } from "../services/endpoints.js";
@@ -64,7 +65,8 @@ export function createEndpointsRouter(
 
   router.post("/:id/camera/test", async (req, res, next) => {
     try {
-      res.json(await camera.test(Number(req.params.id)));
+      const body = cameraTestSchema.parse(req.body ?? {});
+      res.json(await camera.test(Number(req.params.id), body));
     } catch (e) {
       next(e);
     }

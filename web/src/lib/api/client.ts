@@ -319,10 +319,10 @@ export const api = {
       }),
     remove: (endpointId: number) =>
       request<void>(`/api/endpoints/${endpointId}/camera`, { method: "DELETE" }),
-    test: (endpointId: number) =>
-      request<{ ok: boolean; error?: string; streamUri?: string }>(
+    test: (endpointId: number, cfg?: { host: string; port: number; username: string; password?: string }) =>
+      request<{ ok: boolean; error?: string; streamUri?: string; codec?: string }>(
         `/api/endpoints/${endpointId}/camera/test`,
-        { method: "POST" },
+        { method: "POST", body: JSON.stringify(cfg ?? {}) },
       ),
     status: () => request<CameraStatusResponse>("/api/camera/status"),
     snapshotUrl: (endpointId: number) =>

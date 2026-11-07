@@ -93,3 +93,11 @@ export const cameraConfigSchema = z.object({
 export const cameraStartSchema = z.object({
   endpointId: z.coerce.number().int().positive(),
 });
+
+/** "Test" accepts unsaved form values so the operator can probe before saving. */
+export const cameraTestSchema = z.object({
+  host: z.string().trim().max(190).optional(),
+  port: z.coerce.number().int().min(1).max(65535).optional(),
+  username: z.string().max(120).optional(),
+  password: z.string().max(200).optional(),
+});

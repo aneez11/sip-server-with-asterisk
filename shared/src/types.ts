@@ -181,6 +181,9 @@ export interface CameraView {
   profileName: string;
   streamUri: string | null;
   snapshotAvailable: boolean;
+  streamCodec: string | null;
+  streamWidth: number | null;
+  streamHeight: number | null;
   lastCheckAt: string | null;
   lastCheckError: string | null;
   profiles: OnvifProfileView[];

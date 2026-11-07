@@ -159,7 +159,7 @@ services:
       - "8555:8555/udp"
     volumes:
       - ./docker/go2rtc:/opt/go2rtc:ro
-    mem_limit: ${CAMERA_MEM_LIMIT:-192m}
+    mem_limit: ${CAMERA_MEM_LIMIT:-384m}
     logging:
       driver: json-file
       options:

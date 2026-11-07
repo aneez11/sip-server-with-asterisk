@@ -27,6 +27,7 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
   const [form, setForm] = useState(EMPTY);
   const [profiles, setProfiles] = useState<OnvifProfileView[]>([]);
   const [status, setStatus] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [codec, setCodec] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [thumb, setThumb] = useState(0);
 
@@ -49,6 +50,7 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
           : { ok: cam.reachable !== false }
         : null,
     );
+    setCodec(cam.streamCodec ?? null);
   };
 
   useEffect(() => {
@@ -88,8 +90,15 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
   const test = async () => {
     setBusy(true);
     try {
-      const r = await api.camera.test(endpointId);
+      // Probe the values currently in the form, so "Test" works before saving.
+      const r = await api.camera.test(endpointId, {
+        host: form.host.trim(),
+        port: form.port,
+        username: form.username,
+        ...(form.password ? { password: form.password } : {}),
+      });
       setStatus(r.ok ? { ok: true } : { ok: false, error: r.error });
+      if (r.codec) setCodec(r.codec);
       if (r.ok) toast.success("Camera reachable");
       else toast.error(r.error ?? "Camera unreachable");
     } catch (e) {
@@ -195,6 +204,15 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
       {status && (
         <div className={`text-[11px] ${status.ok ? "text-emerald-500" : "text-destructive"}`}>
           {status.ok ? "Camera reachable" : `Camera error: ${status.error}`}
+        </div>
+      )}
+
+      {codec && (
+        <div className={`text-[11px] ${codec.toLowerCase() === "h264" ? "text-muted-foreground" : "text-amber-500"}`}>
+          Stream codec: <span className="font-mono uppercase">{codec}</span>
+          {codec.toLowerCase() !== "h264"
+            ? " — browsers need H.264; the server will transcode (or switch the camera stream to H.264 to save CPU)"
+            : ""}
         </div>
       )}
 

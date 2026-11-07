@@ -38,6 +38,10 @@ const envSchema = z.object({
   CAMERA_GATEWAY_URL: z.string().default('http://go2rtc:1984'),
   // How long a per-talk camera token stays valid beyond the talk itself.
   CAMERA_TOKEN_TTL_SEC: z.coerce.number().default(3600),
+  // Transcode camera video to H.264 when the camera only offers H.265 (browsers
+  // cannot decode HEVC over WebRTC). 'auto' = transcode only when needed,
+  // 'never' = refuse (operator must switch the camera stream to H.264).
+  CAMERA_TRANSCODE: z.enum(['auto', 'never']).default('auto'),
   // Docker host LAN IP clients use to reach the SIP server (shown in the
   // device config guide). Same value as the asterisk container's HOST_IP.
   HOST_IP: z.string().default('10.20.30.20'),
@@ -94,6 +98,7 @@ export const config = {
     secret: parsed.CAMERA_SECRET,
     gatewayUrl: parsed.CAMERA_GATEWAY_URL,
     tokenTtlSec: parsed.CAMERA_TOKEN_TTL_SEC,
+    transcode: parsed.CAMERA_TRANSCODE,
   },
   tls: {
     port: parsed.HTTPS_PORT,

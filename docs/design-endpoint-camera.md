@@ -229,6 +229,31 @@ it when the peer disappears. That removed the stream CRUD, the idle timeout and 
 whole class of leak bugs, while keeping credentials server-side (the browser only
 ever sees the token).
 
+**Correction after testing a real UNV camera:** `?src=` only accepts *registered*
+stream names in go2rtc 1.9, and passthrough is impossible for H.265. The service
+therefore registers the camera with `PUT /api/streams?name=cam-<endpointId>&src=…`
+and WHEPs by name, deleting it on stop.
+
+**Codec reality (important):** the UNV camera reports `H264` in ONVIF while its
+RTSP streams (all three profiles, including the sub) are actually **H.265/HEVC**.
+Chrome cannot decode HEVC over WebRTC (“codecs not matched: video:H265 →
+video:H264”), so:
+
+- the real codec is detected with `ffprobe` at config/test time and stored
+  (`streamCodec/streamWidth/streamHeight`);
+- when it is not H.264 the gateway source becomes `ffmpeg:<rtsp>#video=h264`,
+  i.e. the server transcodes (`CAMERA_TRANSCODE=auto`, default; `never` refuses
+  and asks the operator to switch the camera stream);
+- transcode cost is small on the 704×576 sub-stream, but switching the camera to
+  H.264 is still the better option on this hardware.
+
+Also fixed while testing: the media service lives at the `XAddr` advertised by
+`GetCapabilities` (`/onvif/media` on UNV), not at `/onvif/device_service`, and the
+profile token is an attribute of `<Profiles>`, not of the nested
+`VideoSourceConfiguration` — both bugs made the first probe return "no media
+profiles".
+
+
 **Acceptance verified on the deployment:** table created, camera config
 round-trips, unreachable camera saves with `lastCheckError` (no crash), password
 stored as `v1:<iv>:<tag>:<data>` with zero plaintext occurrences, `GET` exposes
@@ -239,4 +264,10 @@ the camera section.
 
 **Not yet exercised end-to-end:** a real ONVIF probe and a real WHEP stream — both
 need a camera's IP/credentials and a live two-way call.
+
+**Update (real camera, 192.168.10.31):** ONVIF probe, profile selection, stream
+URI resolution, codec detection (HEVC), registration, transcode and WHEP answer
+(`H264/90000`) all verified against live hardware. Remaining unverified step is
+browser playback (ICE to `HOST_IP:8555`) inside a real two-way call.
+
 

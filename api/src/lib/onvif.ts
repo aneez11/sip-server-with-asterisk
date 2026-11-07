@@ -1,5 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { request as httpRequest } from "node:http";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Minimal ONVIF SOAP client — only what the console needs to attach a room
@@ -8,15 +12,18 @@ import { request as httpRequest } from "node:http";
  * Written by hand (no dependency) because the available npm ONVIF packages are
  * unmaintained and this is a small, fixed set of calls.
  *
- * UNV-specific behaviour handled here:
- *  - WS-Security UsernameToken with a SHA-1 *digest* (UNV rejects plain-text
- *    tokens on current firmware).
- *  - Media2 is tried first (`ver20`), then Media1 (`ver10`), because older UNV
- *    firmware only implements Media1.
- *  - `GetSystemDateAndTime` is called first: a camera whose clock is far off
- *    rejects the digest because the `Created` timestamp looks stale. Without
- *    `GetSystemDateAndTimeSupport` the camera's own clock is used.
- *  - HTTP digest auth for the SOAP endpoint, falling back to basic.
+ * Device behaviours handled here (validated against a UNV camera):
+ *  - The media service lives at its own XAddr advertised by `GetCapabilities`
+ *    (UNV: `/onvif/media`). Posting media calls to `/onvif/device_service`
+ *    returns an empty SOAP body, which is what produced "no media profiles".
+ *  - The profile token is an attribute of the `<Profiles>` element itself; the
+ *    nested `VideoSourceConfiguration` has its own unrelated token.
+ *  - Media2 (`ver20`) is tried first, then Media1 (`ver10`) — UNV exposes Media1
+ *    only.
+ *  - WS-Security UsernameToken with a SHA-1 digest (UNV rejects plain text), and
+ *    clock-skew compensation from `GetSystemDateAndTime`.
+ *  - `GetSnapshotUri` may be "Optional Action Not Implemented" — that is not an
+ *    error, the preview simply falls back to video only.
  */
 
 export interface OnvifCameraTarget {
@@ -42,10 +49,11 @@ export interface OnvifProbeResult {
   model?: string;
   firmware?: string;
   profiles: OnvifProfile[];
-  /** Profile chosen for the preview (lowest resolution H.264 stream). */
   suggestedToken?: string;
   streamUri?: string;
   snapshotUri?: string;
+  /** Media service actually used (diagnostics). */
+  mediaService?: string;
   error?: string;
 }
 
@@ -87,32 +95,39 @@ function envelope(header: string, body: string): string {
   );
 }
 
-/** Pull the text of the first `<tag>` (namespace-insensitive). */
 function tagText(xml: string, tag: string): string | undefined {
-  const m = new RegExp(`<(?:[\\w-]+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`).exec(xml);
+  const m = new RegExp(`<(?:[\\w-]+:)?${tag}\\b[^>]*>([^<]*)</(?:[\\w-]+:)?${tag}>`).exec(xml);
   return m ? m[1].trim() : undefined;
 }
 
-/** Pull every `<tag>` block (namespace-insensitive). */
-function tagBlocks(xml: string, tag: string): string[] {
-  const re = new RegExp(`<(?:[\\w-]+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, "g");
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) out.push(m[1]);
-  return out;
-}
-
-function attr(block: string, name: string): string | undefined {
-  const m = new RegExp(`${name}="([^"]*)"`).exec(block);
+/** Inner content of the first matching element. */
+function innerOf(xml: string, tag: string): string | undefined {
+  const m = new RegExp(`<(?:[\\w-]+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`).exec(xml);
   return m ? m[1] : undefined;
 }
 
-/** Extract a SOAP fault message for operator-facing errors. */
+/** [attributes, innerXml] for every matching element — the token lives in the attrs. */
+function elements(xml: string, tag: string): Array<[string, string]> {
+  const re = new RegExp(`<(?:[\\w-]+:)?${tag}\\b([^>]*)>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`, "g");
+  const out: Array<[string, string]> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) out.push([m[1], m[2]]);
+  return out;
+}
+
+function attr(attrs: string, name: string): string | undefined {
+  const m = new RegExp(`${name}="([^"]*)"`).exec(attrs);
+  return m ? m[1] : undefined;
+}
+
 function faultOf(xml: string): string | undefined {
-  const reason = tagText(xml, "Text") ?? tagText(xml, "Reason") ?? tagText(xml, "faultstring");
-  if (reason) return reason.replace(/\s+/g, " ").trim();
-  if (/Fault/i.test(xml)) return "ONVIF fault";
-  return undefined;
+  const reason = innerOf(xml, "Reason") ?? innerOf(xml, "Detail");
+  const text = reason ? tagText(reason, "Text") : undefined;
+  const fallback =
+    tagText(xml, "Text") ?? tagText(xml, "faultstring") ?? tagText(xml, "Value");
+  const msg = (text ?? fallback ?? "").replace(/\s+/g, " ").trim();
+  if (msg) return msg;
+  return /Fault/i.test(xml) ? "ONVIF fault" : undefined;
 }
 
 interface HttpResult {
@@ -121,11 +136,7 @@ interface HttpResult {
   headers: Record<string, string | string[] | undefined>;
 }
 
-function httpPost(
-  url: string,
-  body: string,
-  headers: Record<string, string>,
-): Promise<HttpResult> {
+function httpPost(url: string, body: string, headers: Record<string, string>): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const req = httpRequest(
@@ -134,7 +145,7 @@ function httpPost(
         port: u.port || 80,
         path: `${u.pathname}${u.search}`,
         method: "POST",
-        headers: { "Content-Type": `application/soap+xml; charset=utf-8`, ...headers },
+        headers: { "Content-Type": "application/soap+xml; charset=utf-8", ...headers },
         timeout: 8000,
       },
       (res) => {
@@ -155,14 +166,8 @@ function httpPost(
   });
 }
 
-/** Minimal HTTP Digest (MD5) — UNV's web/ONVIF endpoint uses it. */
-function digestHeader(
-  challenge: string,
-  method: string,
-  uri: string,
-  username: string,
-  password: string,
-): string {
+/** HTTP Digest (MD5) for cameras that protect the ONVIF endpoint itself. */
+function digestHeader(challenge: string, method: string, uri: string, username: string, password: string): string {
   const get = (k: string) => new RegExp(`${k}="?([^",]+)"?`).exec(challenge)?.[1] ?? "";
   const realm = get("realm");
   const nonce = get("nonce");
@@ -176,64 +181,58 @@ function digestHeader(
   const response = qop
     ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
     : md5(`${ha1}:${nonce}:${ha2}`);
-  let header =
-    `Digest username="${username}", realm="${realm}", nonce="${nonce}", uri="${uri}", ` +
-    `response="${response}"`;
+  let header = `Digest username="${username}", realm="${realm}", nonce="${nonce}", uri="${uri}", response="${response}"`;
   if (qop) header += `, qop=${qop}, nc=${nc}, cnonce="${cnonce}"`;
   if (opaque) header += `, opaque="${opaque}"`;
   return header;
 }
 
-/**
- * ONVIF client for one camera. `probe()` is the single entry point used by the
- * console ("Test connection" and saving the config).
- */
 export class OnvifClient {
+  private mediaUrls: { media2?: string; media1?: string } | null = null;
+
   constructor(private readonly target: OnvifCameraTarget) {}
 
-  private get baseUrl(): string {
+  private get deviceUrl(): string {
     return `http://${this.target.host}:${this.target.port}/onvif/device_service`;
   }
 
-  private async post(envelopeXml: string, createdShiftMs = 0): Promise<string> {
-    let res = await httpPost(this.baseUrl, envelopeXml, {});
+  private async post(url: string, envelopeXml: string): Promise<string> {
+    let res = await httpPost(url, envelopeXml, {});
     if (res.status === 401) {
       const challenge = String(res.headers["www-authenticate"] ?? "");
+      const u = new URL(url);
       const auth = challenge.toLowerCase().startsWith("digest")
-        ? digestHeader(challenge, "POST", "/onvif/device_service", this.target.username, this.target.password)
+        ? digestHeader(challenge, "POST", u.pathname, this.target.username, this.target.password)
         : `Basic ${Buffer.from(`${this.target.username}:${this.target.password}`).toString("base64")}`;
-      res = await httpPost(this.baseUrl, envelopeXml, { Authorization: auth });
+      res = await httpPost(url, envelopeXml, { Authorization: auth });
     }
     if (res.status >= 400) {
-      const fault = faultOf(res.body);
-      throw new Error(fault ?? `HTTP ${res.status} from camera`);
+      throw new Error(faultOf(res.body) ?? `HTTP ${res.status} from camera`);
     }
     const fault = faultOf(res.body);
     if (fault) throw new Error(fault);
     return res.body;
   }
 
-  private call(actionBody: string, createdShiftMs = 0): Promise<string> {
-    const header = wsSecurity(
-      this.target.username,
-      this.target.password,
-      createdShiftMs,
+  private call(url: string, actionBody: string, createdShiftMs = 0): Promise<string> {
+    return this.post(
+      url,
+      envelope(wsSecurity(this.target.username, this.target.password, createdShiftMs), actionBody),
     );
-    return this.post(envelope(header, actionBody), createdShiftMs);
   }
 
-  /** Camera clock offset in ms (camera time - our time), clamped to ±2 days. */
+  private async callDevice(actionBody: string, shift = 0): Promise<string> {
+    return this.call(this.deviceUrl, actionBody, shift);
+  }
+
+  /** Camera clock offset in ms, used to keep the WS-Security timestamp valid. */
   private async clockShiftMs(): Promise<number> {
     try {
-      const xml = await this.call(
-        `<GetSystemDateAndTime xmlns="${NS_DEVICE}"/>`,
-        // No auth clock correction yet; some cameras allow this unauthenticated.
-        0,
-      );
-      const utc = tagText(xml, "UTCDateTime");
+      const xml = await this.callDevice(`<GetSystemDateAndTime xmlns="${NS_DEVICE}"/>`);
+      const utc = innerOf(xml, "UTCDateTime");
       if (!utc) return 0;
-      const date = tagText(utc, "Date");
-      const time = tagText(utc, "Time");
+      const date = innerOf(utc, "Date");
+      const time = innerOf(utc, "Time");
       if (!date || !time) return 0;
       const y = Number(tagText(date, "Year"));
       const mo = Number(tagText(date, "Month"));
@@ -242,38 +241,71 @@ export class OnvifClient {
       const mi = Number(tagText(time, "Minute"));
       const s = Number(tagText(time, "Second"));
       if (![y, mo, d, h, mi, s].every(Number.isFinite)) return 0;
-      const camera = Date.UTC(y, mo - 1, d, h, mi, s);
-      const shift = camera - Date.now();
+      const shift = Date.UTC(y, mo - 1, d, h, mi, s) - Date.now();
       return Math.abs(shift) > 120_000 && Math.abs(shift) < 2 * 86_400_000 ? shift : 0;
     } catch {
       return 0;
     }
   }
 
+  /**
+   * Resolve the media service URLs from GetCapabilities. Falls back to the
+   * conventional `/onvif/media` path when the camera omits the block.
+   */
+  private async resolveMediaUrls(shift: number): Promise<{ media2?: string; media1?: string }> {
+    if (this.mediaUrls) return this.mediaUrls;
+    let media1: string | undefined;
+    let media2: string | undefined;
+    try {
+      const xml = await this.callDevice(
+        `<GetCapabilities xmlns="${NS_DEVICE}"><Category>All</Category></GetCapabilities>`,
+        shift,
+      );
+      const caps = innerOf(xml, "Capabilities") ?? xml;
+      const m1 = innerOf(caps, "Media");
+      const m2 = innerOf(caps, "Media2");
+      media1 = m1 ? tagText(m1, "XAddr") : undefined;
+      media2 = m2 ? tagText(m2, "XAddr") : undefined;
+    } catch {
+      // ignore — conventional paths below
+    }
+    this.mediaUrls = {
+      media1: media1 || `http://${this.target.host}:${this.target.port}/onvif/media`,
+      media2,
+    };
+    return this.mediaUrls;
+  }
+
   async probe(): Promise<OnvifProbeResult> {
     const shift = await this.clockShiftMs();
-    const info = await this.call(`<GetDeviceInformation xmlns="${NS_DEVICE}"/>`, shift);
+    const info = await this.callDevice(`<GetDeviceInformation xmlns="${NS_DEVICE}"/>`, shift);
     const manufacturer = tagText(info, "Manufacturer");
     const model = tagText(info, "Model");
     const firmware = tagText(info, "FirmwareVersion");
 
-    // Media2 first, Media1 fallback (older UNV firmware).
-    let xml = "";
+    const urls = await this.resolveMediaUrls(shift);
     let profiles: OnvifProfile[] = [];
-    try {
-      xml = await this.call(`<GetProfiles xmlns="${NS_MEDIA2}"/>`, shift);
-      profiles = this.parseMedia2Profiles(xml);
-    } catch {
-      xml = await this.call(`<GetProfiles xmlns="${NS_MEDIA1}"/>`, shift);
-      profiles = this.parseMedia1Profiles(xml);
+    let mediaService = urls.media1;
+
+    if (urls.media2) {
+      try {
+        const xml = await this.call(urls.media2, `<GetProfiles xmlns="${NS_MEDIA2}"/>`, shift);
+        profiles = parseProfiles(xml);
+        if (profiles.length > 0) mediaService = urls.media2;
+      } catch {
+        // fall through to Media1
+      }
     }
-    if (profiles.length === 0) {
-      throw new Error("Camera returned no ONVIF media profiles");
+    if (profiles.length === 0 && urls.media1) {
+      const xml = await this.call(urls.media1, `<GetProfiles xmlns="${NS_MEDIA1}"/>`, shift);
+      profiles = parseProfiles(xml);
+      mediaService = urls.media1;
     }
+    if (profiles.length === 0) throw new Error("Camera returned no ONVIF media profiles");
 
     const chosen = pickPreviewProfile(profiles);
-    const streamUri = await this.resolveStream(chosen.token, shift);
-    const snapshotUri = await this.resolveSnapshot(chosen.token, shift).catch(() => undefined);
+    const streamUri = await this.resolveStream(chosen.token, urls, shift);
+    const snapshotUri = await this.resolveSnapshot(chosen.token, urls, shift).catch(() => undefined);
 
     return {
       ok: true,
@@ -284,75 +316,64 @@ export class OnvifClient {
       suggestedToken: chosen.token,
       streamUri,
       snapshotUri,
+      mediaService,
     };
   }
 
-  private parseMedia2Profiles(xml: string): OnvifProfile[] {
-    // Media2: <Profiles token="..."><Name>..</Name><Configurations>...
-    const blocks = tagBlocks(xml, "Profiles");
-    return blocks.map((b) => ({
-      token: attr(b, "token") ?? "",
-      name: tagText(b, "Name") ?? attr(b, "token") ?? "profile",
-      width: Number(tagText(tagText(b, "VideoEncoderConfiguration") ?? "", "Width")) || undefined,
-      height: Number(tagText(tagText(b, "VideoEncoderConfiguration") ?? "", "Height")) || undefined,
-      encoding: tagText(tagText(b, "VideoEncoderConfiguration") ?? "", "Encoding") ?? undefined,
-      bitrateKbps:
-        Number(tagText(tagText(b, "VideoEncoderConfiguration") ?? "", "Bitrate")) || undefined,
-      framerate:
-        Number(tagText(tagText(b, "VideoEncoderConfiguration") ?? "", "FrameRateLimit")) || undefined,
-    })).filter((p) => p.token);
-  }
-
-  private parseMedia1Profiles(xml: string): OnvifProfile[] {
-    const blocks = tagBlocks(xml, "Profiles");
-    return blocks.map((b) => {
-      const video = tagText(b, "VideoEncoderConfiguration") ?? "";
-      return {
-        token: attr(b, "token") ?? "",
-        name: tagText(b, "Name") ?? attr(b, "token") ?? "profile",
-        width: Number(tagText(video, "Width")) || undefined,
-        height: Number(tagText(video, "Height")) || undefined,
-        encoding: tagText(video, "Encoding") ?? undefined,
-        bitrateKbps: Number(tagText(video, "Bitrate")) || undefined,
-        framerate: Number(tagText(video, "FrameRateLimit")) || undefined,
-      };
-    }).filter((p) => p.token);
-  }
-
-  private async resolveStream(profileToken: string, shift: number): Promise<string | undefined> {
+  private async resolveStream(
+    profileToken: string,
+    urls: { media2?: string; media1?: string },
+    shift: number,
+  ): Promise<string | undefined> {
     const token = escapeXml(profileToken);
-    try {
-      const xml = await this.call(
-        `<GetStreamUri xmlns="${NS_MEDIA2}"><StreamSetup><Stream xmlns="${NS_SCHEMA}">RTP-Unicast</Stream>` +
-          `<Transport xmlns="${NS_SCHEMA}"><Protocol>RTSP</Protocol></Transport></StreamSetup>` +
-          `<ProfileToken>${token}</ProfileToken></GetStreamUri>`,
-        shift,
-      );
-      return tagText(xml, "Uri");
-    } catch {
-      const xml = await this.call(
-        `<GetStreamUri xmlns="${NS_MEDIA1}"><StreamSetup><Stream xmlns="${NS_SCHEMA}">RTP-Unicast</Stream>` +
-          `<Transport xmlns="${NS_SCHEMA}"><Protocol>RTSP</Protocol></Transport></StreamSetup>` +
-          `<ProfileToken>${token}</ProfileToken></GetStreamUri>`,
-        shift,
-      );
-      return tagText(xml, "Uri");
+    if (urls.media2) {
+      try {
+        const xml = await this.call(
+          urls.media2,
+          `<GetStreamUri xmlns="${NS_MEDIA2}"><StreamSetup><Stream xmlns="${NS_SCHEMA}">RTP-Unicast</Stream>` +
+            `<Transport xmlns="${NS_SCHEMA}"><Protocol>RTSP</Protocol></Transport></StreamSetup>` +
+            `<ProfileToken>${token}</ProfileToken></GetStreamUri>`,
+          shift,
+        );
+        const uri = tagText(xml, "Uri");
+        if (uri) return uri;
+      } catch {
+        // fall through
+      }
     }
-  }
-
-  private async resolveSnapshot(profileToken: string, shift: number): Promise<string | undefined> {
-    const token = escapeXml(profileToken);
-    try {
-      const xml = await this.call(
-        `<GetSnapshotUri xmlns="${NS_MEDIA2}"><ProfileToken>${token}</ProfileToken></GetSnapshotUri>`,
-        shift,
-      );
-      const uri = tagText(xml, "Uri");
-      if (uri) return uri;
-    } catch {
-      // fall through to Media1
-    }
+    if (!urls.media1) return undefined;
     const xml = await this.call(
+      urls.media1,
+      `<GetStreamUri xmlns="${NS_MEDIA1}"><StreamSetup><Stream xmlns="${NS_SCHEMA}">RTP-Unicast</Stream>` +
+        `<Transport xmlns="${NS_SCHEMA}"><Protocol>RTSP</Protocol></Transport></StreamSetup>` +
+        `<ProfileToken>${token}</ProfileToken></GetStreamUri>`,
+      shift,
+    );
+    return tagText(xml, "Uri");
+  }
+
+  private async resolveSnapshot(
+    profileToken: string,
+    urls: { media2?: string; media1?: string },
+    shift: number,
+  ): Promise<string | undefined> {
+    const token = escapeXml(profileToken);
+    if (urls.media2) {
+      try {
+        const xml = await this.call(
+          urls.media2,
+          `<GetSnapshotUri xmlns="${NS_MEDIA2}"><ProfileToken>${token}</ProfileToken></GetSnapshotUri>`,
+          shift,
+        );
+        const uri = tagText(xml, "Uri");
+        if (uri) return uri;
+      } catch {
+        // fall through
+      }
+    }
+    if (!urls.media1) return undefined;
+    const xml = await this.call(
+      urls.media1,
       `<GetSnapshotUri xmlns="${NS_MEDIA1}"><ProfileToken>${token}</ProfileToken></GetSnapshotUri>`,
       shift,
     );
@@ -360,13 +381,88 @@ export class OnvifClient {
   }
 }
 
+/** Parse `<Profiles token="...">` elements (Media1 and Media2 share the shape). */
+export function parseProfiles(xml: string): OnvifProfile[] {
+  const out: OnvifProfile[] = [];
+  for (const [attrs, body] of elements(xml, "Profiles")) {
+    const token = attr(attrs, "token");
+    if (!token) continue;
+    const video = innerOf(body, "VideoEncoderConfiguration") ?? "";
+    out.push({
+      token,
+      name: tagText(body, "Name") ?? token,
+      width: Number(tagText(video, "Width")) || undefined,
+      height: Number(tagText(video, "Height")) || undefined,
+      encoding: tagText(video, "Encoding") ?? undefined,
+      bitrateKbps: Number(tagText(video, "Bitrate")) || undefined,
+      framerate: Number(tagText(video, "FrameRateLimit")) || undefined,
+    });
+  }
+  return out;
+}
+
 /**
- * Prefer the lowest-resolution H.264 profile: that is the sub-stream on a UNV
- * camera, and H.264 is what WebRTC can pass through without transcoding.
+ * Prefer a low-bandwidth H.264 profile: the largest one that is still at most
+ * 720p (the sub-stream on a UNV camera), else the smallest available.
+ *
+ * Note: some cameras *report* H264 here while actually streaming H.265, so the
+ * real codec is verified separately with ffprobe (see services/camera.ts).
  */
 export function pickPreviewProfile(profiles: OnvifProfile[]): OnvifProfile {
   const h264 = profiles.filter((p) => !p.encoding || p.encoding.toUpperCase() === "H264");
   const pool = h264.length > 0 ? h264 : profiles;
   const area = (p: OnvifProfile) => (p.width ?? 1e6) * (p.height ?? 1e6);
-  return [...pool].sort((a, b) => area(a) - area(b))[0];
+  const preview = pool.filter(
+    (p) => (p.width ?? 0) > 0 && (p.width ?? 0) <= 1280 && (p.height ?? 0) <= 720,
+  );
+  const candidates = preview.length > 0 ? preview : pool;
+  return [...candidates].sort((a, b) => area(b) - area(a))[0];
+}
+
+export interface CodecInfo {
+  codec?: string;
+  width?: number;
+  height?: number;
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Ask ffprobe what the RTSP stream really carries. ONVIF's encoder report can
+ * disagree with reality (UNV cameras report H264 while streaming H.265).
+ */
+export async function probeRtspCodec(uri: string, timeoutSec = 12): Promise<CodecInfo> {
+  try {
+    const { stdout } = await execFileAsync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        String(timeoutSec * 1_000_000),
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=codec_name,width,height",
+        "-of",
+        "default=nw=1",
+        uri,
+      ],
+      { timeout: (timeoutSec + 4) * 1000 },
+    );
+    const get = (k: string) => new RegExp(`^${k}=(.+)$`, "m").exec(stdout)?.[1]?.trim();
+    const codec = get("codec_name");
+    if (!codec) return { ok: false, error: "ffprobe returned no video stream" };
+    return {
+      ok: true,
+      codec,
+      width: Number(get("width")) || undefined,
+      height: Number(get("height")) || undefined,
+    };
+  } catch (e) {
+    const msg = (e as Error).message.split("\n")[0];
+    return { ok: false, error: msg };
+  }
 }

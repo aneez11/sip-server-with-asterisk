@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { ApiError } from "../errors.js";
-import { OnvifClient, pickPreviewProfile, type OnvifProfile } from "../lib/onvif.js";
+import { OnvifClient, pickPreviewProfile, probeRtspCodec, type OnvifProfile } from "../lib/onvif.js";
 import { encryptSecret, decryptSecret, canDecrypt } from "../lib/secret-box.js";
 
 export interface CameraConfigInput {
@@ -32,6 +32,10 @@ export interface CameraView {
   profileName: string;
   streamUri: string | null;
   snapshotAvailable: boolean;
+  /** Codec actually pulled over RTSP ("h264" / "hevc"), not what ONVIF claims. */
+  streamCodec: string | null;
+  streamWidth: number | null;
+  streamHeight: number | null;
   lastCheckAt: string | null;
   lastCheckError: string | null;
   profiles: OnvifProfile[];
@@ -50,6 +54,9 @@ interface CameraRow {
   rtspUri: string;
   snapshotUri: string;
   preferredStream: string;
+  streamCodec: string;
+  streamWidth: number | null;
+  streamHeight: number | null;
   lastCheckAt: Date | null;
   lastCheckOk: boolean | null;
   lastCheckError: string | null;
@@ -69,6 +76,9 @@ const EMPTY_VIEW: CameraView = {
   profileName: "",
   streamUri: null,
   snapshotAvailable: false,
+  streamCodec: null,
+  streamWidth: null,
+  streamHeight: null,
   lastCheckAt: null,
   lastCheckError: null,
   profiles: [],
@@ -133,6 +143,9 @@ export class CameraService {
     let snapshotUri = existing?.snapshotUri ?? "";
     let profileToken = input.profileToken || existing?.profileToken || "";
     let profileName = existing?.profileName ?? "";
+    let streamCodec = existing?.streamCodec ?? "";
+    let streamWidth: number | null = existing?.streamWidth ?? null;
+    let streamHeight: number | null = existing?.streamHeight ?? null;
 
     if (input.host) {
       try {
@@ -150,6 +163,23 @@ export class CameraService {
         profileName = chosen?.name ?? "";
         rtspUri = probe.streamUri ?? "";
         snapshotUri = probe.snapshotUri ?? "";
+
+        // ONVIF's encoder report is not always truthful (UNV reports H264 while
+        // streaming H265), so verify what RTSP really carries.
+        if (rtspUri) {
+          const withCreds = withCredentials(rtspUri, input.username, password);
+          const codec = await probeRtspCodec(withCreds);
+          if (codec.ok) {
+            streamCodec = codec.codec ?? "";
+            streamWidth = codec.width ?? null;
+            streamHeight = codec.height ?? null;
+          } else {
+            streamCodec = "";
+            streamWidth = null;
+            streamHeight = null;
+            error = `ONVIF ok, but the RTSP stream could not be read: ${codec.error}`;
+          }
+        }
       } catch (e) {
         error = (e as Error).message;
       }
@@ -167,6 +197,9 @@ export class CameraService {
       profileName,
       rtspUri,
       snapshotUri,
+      streamCodec,
+      streamWidth,
+      streamHeight,
       lastCheckAt: new Date(),
       lastCheckOk: error ? false : input.host ? true : null,
       lastCheckError: error ?? null,
@@ -181,38 +214,64 @@ export class CameraService {
     await prisma.endpointCamera.deleteMany({ where: { endpointId } });
   }
 
-  /** "Test connection" — probe without saving the configuration. */
+  /** "Test connection" — probe stored config, or unsaved values from the form. */
   async test(
     endpointId: number,
-  ): Promise<{ ok: boolean; error?: string; profiles?: OnvifProfile[]; streamUri?: string }> {
+    overrides?: { host?: string; port?: number; username?: string; password?: string },
+  ): Promise<{ ok: boolean; error?: string; profiles?: OnvifProfile[]; streamUri?: string; codec?: string }> {
     this.assertEnabled();
     const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
-    if (!row?.host) throw new ApiError(422, "No camera configured for this endpoint");
+    const host = overrides?.host?.trim() || row?.host || "";
+    if (!host) throw new ApiError(422, "Enter the camera's host or IP address first");
+
+    const password =
+      overrides?.password && overrides.password !== ""
+        ? overrides.password
+        : safeDecrypt(row?.passwordCipher ?? "");
+
     try {
       const probe = await new OnvifClient({
-        host: row.host,
-        port: row.port,
-        username: row.username,
-        password: safeDecrypt(row.passwordCipher),
+        host,
+        port: overrides?.port ?? row?.port ?? 80,
+        username: overrides?.username ?? row?.username ?? "",
+        password,
       }).probe();
-      await prisma.endpointCamera.update({
-        where: { endpointId },
-        data: {
-          lastCheckAt: new Date(),
-          lastCheckOk: true,
-          lastCheckError: null,
-          profileToken: row.profileToken || probe.suggestedToken || "",
-          rtspUri: row.rtspUri || probe.streamUri || "",
-          snapshotUri: row.snapshotUri || probe.snapshotUri || "",
-        },
-      });
-      return { ok: true, profiles: probe.profiles, streamUri: probe.streamUri };
+      const codec = probe.streamUri
+        ? await probeRtspCodec(
+            withCredentials(probe.streamUri, overrides?.username ?? row?.username ?? "", password),
+          )
+        : { ok: false, error: "no stream URI" };
+
+      if (row) {
+        await prisma.endpointCamera.update({
+          where: { endpointId },
+          data: {
+            lastCheckAt: new Date(),
+            lastCheckOk: true,
+            lastCheckError: null,
+            profileToken: row.profileToken || probe.suggestedToken || "",
+            rtspUri: row.rtspUri || probe.streamUri || "",
+            snapshotUri: row.snapshotUri || probe.snapshotUri || "",
+            streamCodec: codec.ok ? (codec.codec ?? "") : row.streamCodec,
+            streamWidth: codec.ok ? (codec.width ?? null) : row.streamWidth,
+            streamHeight: codec.ok ? (codec.height ?? null) : row.streamHeight,
+          },
+        });
+      }
+      return {
+        ok: true,
+        profiles: probe.profiles,
+        streamUri: probe.streamUri,
+        codec: codec.ok ? codec.codec : undefined,
+      };
     } catch (e) {
       const message = (e as Error).message;
-      await prisma.endpointCamera.update({
-        where: { endpointId },
-        data: { lastCheckAt: new Date(), lastCheckOk: false, lastCheckError: message },
-      });
+      if (row) {
+        await prisma.endpointCamera.update({
+          where: { endpointId },
+          data: { lastCheckAt: new Date(), lastCheckOk: false, lastCheckError: message },
+        });
+      }
       return { ok: false, error: message };
     }
   }
@@ -223,7 +282,7 @@ export class CameraService {
    */
   async rtspUriFor(
     endpointId: number,
-  ): Promise<{ uri: string; snapshotUri: string; enabled: boolean } | null> {
+  ): Promise<{ uri: string; snapshotUri: string; enabled: boolean; codec: string } | null> {
     const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
     if (!row || !row.rtspUri) return null;
     const u = new URL(row.rtspUri);
@@ -231,7 +290,7 @@ export class CameraService {
       u.username = row.username;
       u.password = safeDecrypt(row.passwordCipher);
     }
-    return { uri: u.toString(), snapshotUri: row.snapshotUri, enabled: row.enabled };
+    return { uri: u.toString(), snapshotUri: row.snapshotUri, enabled: row.enabled, codec: row.streamCodec };
   }
 
   /** Proxied JPEG so the camera's credentials never reach the browser. */
@@ -264,6 +323,9 @@ export function toView(row: CameraRow | null): CameraView {
     profileName: row.profileName,
     streamUri: row.rtspUri || null,
     snapshotAvailable: Boolean(row.snapshotUri),
+    streamCodec: row.streamCodec || null,
+    streamWidth: row.streamWidth ?? null,
+    streamHeight: row.streamHeight ?? null,
     lastCheckAt: row.lastCheckAt?.toISOString() ?? null,
     lastCheckError: row.lastCheckError ?? null,
     profiles: [],
@@ -275,6 +337,19 @@ function safeDecrypt(ciphertext: string): string {
     return decryptSecret(ciphertext);
   } catch {
     return "";
+  }
+}
+
+/** Add credentials to an ONVIF-provided RTSP URI (used for local probing only). */
+function withCredentials(uri: string, username: string, password: string): string {
+  if (!username) return uri;
+  try {
+    const u = new URL(uri);
+    u.username = username;
+    u.password = password;
+    return u.toString();
+  } catch {
+    return uri;
   }
 }
 

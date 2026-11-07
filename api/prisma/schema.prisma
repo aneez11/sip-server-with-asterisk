@@ -50,6 +50,11 @@ model EndpointCamera {
   rtspUri          String   @default("")
   snapshotUri      String   @default("")
   preferredStream  String   @default("sub")
+  // Real codec as pulled over RTSP (ONVIF's report can lie: UNV cameras say
+  // H264 while streaming H265). Used to decide on transcoding.
+  streamCodec      String   @default("")
+  streamWidth      Int?
+  streamHeight     Int?
   lastCheckAt      DateTime?
   lastCheckOk      Boolean?
   lastCheckError   String?
