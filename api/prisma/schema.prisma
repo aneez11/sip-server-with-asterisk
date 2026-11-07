@@ -29,6 +29,32 @@ model Endpoint {
   zones       ZoneMember[]
   paGroupsAsInitiator PaGroup[] @relation("PaInitiator")
   paGroupsAsReceiver  PaGroupReceiver[]
+  camera      EndpointCamera?
+}
+
+// Optional ONVIF camera attached to a room endpoint. Credentials are stored
+// encrypted (see api/src/lib/secret-box.ts) and never leave the API.
+model EndpointCamera {
+  id               Int      @id @default(autoincrement())
+  endpointId       Int      @unique
+  endpoint         Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  enabled          Boolean  @default(false)
+  host             String
+  port             Int      @default(80)
+  username         String   @default("")
+  passwordCipher   String   @default("")
+  // Multi-sensor cameras / NVR-fronted groups expose several channels.
+  channel          Int      @default(1)
+  profileToken     String   @default("")
+  profileName      String   @default("")
+  rtspUri          String   @default("")
+  snapshotUri      String   @default("")
+  preferredStream  String   @default("sub")
+  lastCheckAt      DateTime?
+  lastCheckOk      Boolean?
+  lastCheckError   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Zone {

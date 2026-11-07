@@ -26,6 +26,10 @@ services:
       HTTPS_PORT: ${HTTPS_PORT:-3443}
       TLS_CERT_PATH: /app/certs/server.pem
       TLS_KEY_PATH: /app/certs/server.key
+      # Endpoint cameras: ONVIF config + RTSP -> WebRTC preview via go2rtc.
+      CAMERA_ENABLED: ${CAMERA_ENABLED:-true}
+      CAMERA_SECRET: ${CAMERA_SECRET:?CAMERA_SECRET is required in .env}
+      CAMERA_GATEWAY_URL: http://go2rtc:1984
     ports:
       - "3001:3001"
       - "${HTTPS_PORT:-3443}:${HTTPS_PORT:-3443}"
@@ -85,8 +89,7 @@ services:
       # and speakers use to reach this server.
       HOST_IP: ${HOST_IP:?HOST_IP is required in .env}
       # Shared secret the PA AGI script uses to call the API's PA-trigger route.
-      PA_API_SECRET: ${PA_TRIGGER_SECRET:?PA_TRIGGER_SECRET is required in .env}
-      # Where the AGI script finds the API on the bridge network; "api" is the
+      PA_API_SECRET: ${PA_TRIGGER_SECRET:?PA_TRIGGER_SECRET is required in .env}      # Where the AGI script finds the API on the bridge network; "api" is the
       # compose service name.
       PA_API_BASE: http://api:3001
     ports:
@@ -142,8 +145,31 @@ services:
       default:
         ipv4_address: 172.30.0.2
 
-  autoheal:
-    # Restarts any container labelled autoheal=true that reports unhealthy.
+  go2rtc:
+    # RTSP -> WebRTC bridge for room camera previews during a two-way call.
+    # The API talks to it on the bridge network (1984, never published); only the
+    # ICE/WebRTC port is exposed because media flows browser <-> gateway directly.
+    image: alexxit/go2rtc:latest
+    restart: unless-stopped
+    command: ["/bin/sh", "/opt/go2rtc/entrypoint.sh"]
+    environment:
+      HOST_IP: ${HOST_IP:?HOST_IP is required in .env}
+    ports:
+      - "8555:8555/tcp"
+      - "8555:8555/udp"
+    volumes:
+      - ./docker/go2rtc:/opt/go2rtc:ro
+    mem_limit: ${CAMERA_MEM_LIMIT:-192m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      default:
+        ipv4_address: 172.30.0.6
+
+  autoheal:    # Restarts any container labelled autoheal=true that reports unhealthy.
     # Automates the manual "restart the container" recovery: a hung API or
     # Asterisk is detected by its healthcheck and replaced automatically.
     image: willfarrell/autoheal:latest

@@ -10,6 +10,9 @@ import type {
   PaGroup,
   TalkSessionView,
   TalkStartRequest,
+  CameraView,
+  CameraStartResponse,
+  CameraStatusResponse,
   Zone,
 } from "@infinity/shared";
 
@@ -283,6 +286,48 @@ export const api = {
           startedAt: string;
         }[];
       }>("/api/talk/status"),
+    camera: {
+      start: (talkId: string, endpointId: number) =>
+        request<CameraStartResponse>(`/api/talk/${talkId}/camera`, {
+          method: "POST",
+          body: JSON.stringify({ endpointId }),
+        }),
+      stop: (talkId: string) =>
+        request<void>(`/api/talk/${talkId}/camera`, { method: "DELETE" }),
+    },
+  },
+
+  camera: {
+    get: (endpointId: number) =>
+      request<CameraView>(`/api/endpoints/${endpointId}/camera`),
+    save: (
+      endpointId: number,
+      body: {
+        enabled: boolean;
+        host: string;
+        port: number;
+        username: string;
+        password?: string;
+        channel: number;
+        preferredStream: "sub" | "main";
+        profileToken?: string;
+      },
+    ) =>
+      request<CameraView>(`/api/endpoints/${endpointId}/camera`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    remove: (endpointId: number) =>
+      request<void>(`/api/endpoints/${endpointId}/camera`, { method: "DELETE" }),
+    test: (endpointId: number) =>
+      request<{ ok: boolean; error?: string; streamUri?: string }>(
+        `/api/endpoints/${endpointId}/camera/test`,
+        { method: "POST" },
+      ),
+    status: () => request<CameraStatusResponse>("/api/camera/status"),
+    snapshotUrl: (endpointId: number) =>
+      `/api/endpoints/${endpointId}/camera/snapshot`,
+    whepUrl: (token: string) => `/api/camera/whep/${token}`,
   },
 
   music: {

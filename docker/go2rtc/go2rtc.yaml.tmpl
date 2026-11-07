@@ -1,0 +1,22 @@
+# go2rtc config — rendered by entrypoint.sh with the deployment's HOST_IP.
+#
+# go2rtc is a pure RTSP -> WebRTC bridge: the API hands it a camera's RTSP URI at
+# WHEP time, it pulls the stream on demand and drops it when the peer goes away.
+# No transcoding happens here — the camera must offer H.264 on the profile we
+# use (UNV: sub-stream), which is what browsers can decode.
+
+api:
+  listen: ":1984"
+
+rtsp:
+  listen: ":8554"
+
+webrtc:
+  listen: ":8555"
+  # Advertised to the browser for ICE. Must be the Docker host's LAN address —
+  # the same HOST_IP used by the Asterisk pjsip template.
+  candidates:
+    - "__HOST_IP__:8555"
+
+log:
+  level: info

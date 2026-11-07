@@ -89,6 +89,7 @@ const fmtClock = () => new Date().toLocaleTimeString();
 
 export class LiveTalkService {
   private sessions = new Map<string, TalkSession>();
+  private stopHook: ((talkId: string) => void) | null = null;
 
   constructor(
     private readonly ami: AmiClient,
@@ -106,6 +107,25 @@ export class LiveTalkService {
       source: s.source,
       startedAt: s.startedAt.toISOString(),
     }));
+  }
+
+  /** Look up a live session (used by the camera preview routes). */
+  getSession(talkId: string): TalkSessionView | null {
+    const s = this.sessions.get(talkId);
+    if (!s) return null;
+    return {
+      id: s.id,
+      mode: s.mode,
+      endpointIds: s.endpointIds,
+      paGroupIds: s.paGroupIds,
+      source: s.source,
+      startedAt: s.startedAt.toISOString(),
+    };
+  }
+
+  /** Called after any talk stops, so dependent resources (camera tokens) close. */
+  setStopHook(fn: (talkId: string) => void): void {
+    this.stopHook = fn;
   }
 
   /** Associate a socket with an active talk (replaces any previous owner). */
@@ -343,6 +363,12 @@ export class LiveTalkService {
       }
       await this.finalize(s.logId, s.connected ? "success" : "failed");
       stopped += 1;
+      // Release anything bound to this talk (camera preview tokens).
+      try {
+        this.stopHook?.(id);
+      } catch {
+        // best effort — never let cleanup break the stop path
+      }
     }
     return { stopped };
   }

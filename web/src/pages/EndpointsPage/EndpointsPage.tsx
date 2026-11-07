@@ -15,6 +15,7 @@ import { Input } from "@/components/Input/Input";
 import { Badge } from "@/components/Badge/Badge";
 import { Switch } from "@/components/Switch/Switch";
 import { Checkbox } from "@/components/Checkbox/Checkbox";
+import { CameraSettings } from "@/components/CameraSettings/CameraSettings";
 import {
   Dialog,
   DialogContent,
@@ -373,6 +374,9 @@ export const EndpointsPage = () => {
                 placeholder="Ground Floor"
               />
             </div>
+            {dialog?.mode === "edit" && (
+              <CameraSettings endpointId={dialog.id} />
+            )}
             {dialog?.mode === "add" && (
               <div>
                 <label className="text-[11px] text-muted-foreground mb-1 block">

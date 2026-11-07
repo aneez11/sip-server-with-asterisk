@@ -24,6 +24,20 @@ const envSchema = z.object({
   LIVETALK_PAGE_DURATION: z.coerce.number().default(3600),
   // Shared secret for the internal PA-trigger route (dialplan AGI hook).
   PA_TRIGGER_SECRET: z.string().default('pa-internal-trigger-secret'),
+  // ---- endpoint cameras (ONVIF + RTSP -> WebRTC gateway) --------------------
+  // Master switch. When false the camera routes answer 503 and the console
+  // hides the camera UI, so the feature can ship dark and be enabled per site.
+  CAMERA_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+  // Key material for encrypting camera passwords at rest. Must stay stable: a
+  // changed value makes previously stored camera passwords unreadable.
+  CAMERA_SECRET: z.string().default('change-me-camera-secret'),
+  // go2rtc REST API on the compose network (never published to the host).
+  CAMERA_GATEWAY_URL: z.string().default('http://go2rtc:1984'),
+  // How long a per-talk camera token stays valid beyond the talk itself.
+  CAMERA_TOKEN_TTL_SEC: z.coerce.number().default(3600),
   // Docker host LAN IP clients use to reach the SIP server (shown in the
   // device config guide). Same value as the asterisk container's HOST_IP.
   HOST_IP: z.string().default('10.20.30.20'),
@@ -75,6 +89,12 @@ export const config = {
   },
   paTriggerSecret: parsed.PA_TRIGGER_SECRET,
   hostIp: parsed.HOST_IP,
+  camera: {
+    enabled: parsed.CAMERA_ENABLED,
+    secret: parsed.CAMERA_SECRET,
+    gatewayUrl: parsed.CAMERA_GATEWAY_URL,
+    tokenTtlSec: parsed.CAMERA_TOKEN_TTL_SEC,
+  },
   tls: {
     port: parsed.HTTPS_PORT,
     certPath: parsed.TLS_CERT_PATH,

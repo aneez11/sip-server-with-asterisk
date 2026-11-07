@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, text as expressText } from "express";
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { Multer } from "multer";
@@ -9,6 +9,8 @@ import {
   endpointCreateSchema,
   endpointUpdateSchema,
   talkSchema,
+  cameraConfigSchema,
+  cameraStartSchema,
 } from "../validation/schemas.js";
 import { ApiError } from "../errors.js";
 import type { EndpointService } from "../services/endpoints.js";
@@ -19,14 +21,66 @@ import type { MonitorService } from "../live/monitor.js";
 import type { AmiClient } from "../ami/client.js";
 import type { AmiListener } from "../ami/listener.js";
 import type { PaGroupService } from "../services/pa-groups.js";
+import type { CameraService } from "../services/camera.js";
+import type { CameraStreamService } from "../services/camera-stream.js";
 
 const upload: Multer = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-export function createEndpointsRouter(endpoints: EndpointService): Router {
+export function createEndpointsRouter(
+  endpoints: EndpointService,
+  camera: CameraService,
+): Router {
   const router = Router();
+
+  // ---- ONVIF camera attached to an endpoint --------------------------------
+  router.get("/:id/camera", async (req, res, next) => {
+    try {
+      res.json(await camera.get(Number(req.params.id)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/:id/camera", async (req, res, next) => {
+    try {
+      const body = cameraConfigSchema.parse(req.body);
+      res.json(await camera.save(Number(req.params.id), body));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete("/:id/camera", async (req, res, next) => {
+    try {
+      await camera.remove(Number(req.params.id));
+      res.status(204).end();
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/:id/camera/test", async (req, res, next) => {
+    try {
+      res.json(await camera.test(Number(req.params.id)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Proxied JPEG: the camera's credentials never reach the browser.
+  router.get("/:id/camera/snapshot", async (req, res, next) => {
+    try {
+      const snap = await camera.snapshot(Number(req.params.id));
+      res.setHeader("Content-Type", snap.contentType);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(snap.body);
+    } catch (e) {
+      next(e);
+    }
+  });
 
   router.get("/", async (_req, res, next) => {
     try {
@@ -339,7 +393,10 @@ export function createBroadcastRouter(broadcast: BroadcastService): Router {
   return router;
 }
 
-export function createTalkRouter(liveTalk: LiveTalkService): Router {
+export function createTalkRouter(
+  liveTalk: LiveTalkService,
+  cameraStream: CameraStreamService,
+): Router {
   const router = Router();
 
   // Start a live talk: >=1 endpoints (or PA groups, which expand to their
@@ -365,7 +422,59 @@ export function createTalkRouter(liveTalk: LiveTalkService): Router {
       const talkId =
         (req.body as { talkId?: string | null } | undefined)?.talkId ??
         undefined;
-      res.json(await liveTalk.stop(talkId, "user"));
+      const result = await liveTalk.stop(talkId, "user");
+      // Close any camera tokens for the talk(s) that were stopped.
+      if (talkId) cameraStream.stop(talkId);
+      else cameraStream.stopAll();
+      res.json(result);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/:talkId/camera", async (req, res, next) => {
+    try {
+      const talk = liveTalk.getSession(req.params.talkId);
+      if (!talk) throw new ApiError(404, "Talk not found");
+      const { endpointId } = cameraStartSchema.parse(req.body);
+      res.json(cameraStream.ensure(talk, endpointId));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete("/:talkId/camera", async (req, res, next) => {
+    try {
+      cameraStream.stop(req.params.talkId);
+      res.status(204).end();
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+/**
+ * WHEP proxy: the browser posts an SDP offer here with its short-lived token and
+ * the API forwards it to go2rtc together with the camera's RTSP URI. Keeping the
+ * proxy in the API means the console stays on HTTPS (no mixed content) and the
+ * camera password never leaves the server.
+ */
+export function createCameraRouter(stream: CameraStreamService): Router {
+  const router = Router();
+  const textBody = expressText({ type: () => true, limit: "512kb" });
+
+  router.post("/whep/:token", textBody, async (req, res, next) => {
+    try {
+      const offer = typeof req.body === "string" ? req.body : "";
+      if (!offer) throw new ApiError(400, "Missing SDP offer");
+      const answer = await stream.whep(
+        req.params.token,
+        offer,
+        req.headers["content-type"] ?? "application/sdp",
+      );
+      res.type(answer.contentType).send(answer.body);
     } catch (e) {
       next(e);
     }
@@ -373,7 +482,7 @@ export function createTalkRouter(liveTalk: LiveTalkService): Router {
 
   router.get("/status", async (_req, res, next) => {
     try {
-      res.json({ active: liveTalk.listActive() });
+      res.json({ enabled: config.camera.enabled, gateway: await stream.gatewayStatus() });
     } catch (e) {
       next(e);
     }

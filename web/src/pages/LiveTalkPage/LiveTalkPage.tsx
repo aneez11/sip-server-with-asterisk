@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Radio, Square, PhoneCall, ShieldAlert, Mic, MonitorSpeaker, WifiOff } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
+import { CameraPreview } from '@/components/CameraPreview/CameraPreview';
 import { suggestedHttpsOrigin } from '@/lib/mic';
 
 const METER_BARS = 24;
@@ -14,6 +15,7 @@ export const LiveTalkPage = () => {
   const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
   const talkSource = useStore((s) => s.talkSource);
   const setTalkSource = useStore((s) => s.setTalkSource);
+  const activeTalkId = useStore((s) => s.activeTalkId);
   const talkConnectionLost = useStore((s) => s.talkConnectionLost);
   const paGroups = useStore((s) => s.paGroups);
   const busy = useStore((s) => s.busy);
@@ -42,6 +44,14 @@ export const LiveTalkPage = () => {
 
   const onlineCount = endpoints.filter((e) => e.registered).length;
   const twoway = talkMode === 'twoway';
+
+  // A two-way call can show the room camera. The target is the single endpoint
+  // of the talk; the preview mounts only while the call is up.
+  const twowayEndpointId = twoway && talkTargetIds.size === 1
+    ? [...talkTargetIds][0]
+    : null;
+  const twowayEndpointLabel =
+    endpoints.find((e) => e.id === twowayEndpointId)?.label ?? 'endpoint';
 
   // Live talk can target endpoints, PA groups, or both — a PA group counts as
   // every one of its receivers, so the summary reflects the resolved fan-out.
@@ -90,6 +100,14 @@ export const LiveTalkPage = () => {
             : `Select endpoints or PA groups from the right panel (${onlineCount} registered), then Start talk. One phone endpoint = two-way call; multiple endpoints or a PA group = live one-way broadcast.`}
         </span>
       </div>
+
+      {recording && twowayEndpointId !== null && activeTalkId && (
+        <CameraPreview
+          talkId={activeTalkId}
+          endpointId={twowayEndpointId}
+          endpointLabel={twowayEndpointLabel}
+        />
+      )}
 
       <div className="flex-shrink-0 border rounded-xl bg-card shadow-lg p-4 flex flex-col items-center gap-3 mt-auto">
         {!recording && (

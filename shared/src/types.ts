@@ -156,6 +156,46 @@ export interface TalkSessionView {
   startedAt: string;
 }
 
+// ---- endpoint cameras (ONVIF + WebRTC preview) -----------------------------
+
+export interface OnvifProfileView {
+  token: string;
+  name: string;
+  width?: number;
+  height?: number;
+  encoding?: string;
+  bitrateKbps?: number;
+}
+
+export interface CameraView {
+  enabled: boolean;
+  configured: boolean;
+  reachable: boolean | null;
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  hasPassword: boolean;
+  channel: number;
+  preferredStream: string;
+  profileToken: string;
+  profileName: string;
+  streamUri: string | null;
+  snapshotAvailable: boolean;
+  lastCheckAt: string | null;
+  lastCheckError: string | null;
+  profiles: OnvifProfileView[];
+}
+
+export interface CameraStartResponse {
+  token: string;
+  expiresAt: string;
+}
+
+export interface CameraStatusResponse {
+  enabled: boolean;
+  gateway: boolean;
+}
+
 export interface TalkStartResponse {
   broadcastLogId: number;
 }

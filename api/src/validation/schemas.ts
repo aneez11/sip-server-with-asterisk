@@ -70,3 +70,26 @@ export const talkSchema = z
     message: "Select at least one endpoint or PA group",
     path: ["endpointIds"],
   });
+
+// ---- endpoint cameras (ONVIF + WebRTC preview) ----------------------------
+
+export const cameraConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  host: z
+    .string()
+    .trim()
+    .max(190)
+    .regex(/^$|^[A-Za-z0-9._-]+$/, "Enter a hostname or IP address")
+    .default(""),
+  port: z.coerce.number().int().min(1).max(65535).default(80),
+  username: z.string().max(120).default(""),
+  // Write-only: an empty string keeps the stored password.
+  password: z.string().max(200).optional(),
+  channel: z.coerce.number().int().min(1).max(64).default(1),
+  preferredStream: z.enum(["sub", "main"]).default("sub"),
+  profileToken: z.string().max(120).optional(),
+});
+
+export const cameraStartSchema = z.object({
+  endpointId: z.coerce.number().int().positive(),
+});

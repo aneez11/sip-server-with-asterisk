@@ -27,6 +27,7 @@ import {
   createAnnouncementsRouter,
   createBroadcastRouter,
   createTalkRouter,
+  createCameraRouter,
   createMusicRouter,
   createStatusRouter,
   createProfilesRouter,
@@ -38,6 +39,8 @@ import {
 import { LiveTalkService, SOCKET_AUDIO_EVENT } from "./live/LiveTalkService.js";
 import { MonitorService } from "./live/monitor.js";
 import { PaGroupService } from "./services/pa-groups.js";
+import { CameraService } from "./services/camera.js";
+import { CameraStreamService } from "./services/camera-stream.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -212,6 +215,12 @@ async function main() {
     monitor,
   );
 
+  // Endpoint cameras: ONVIF config/probing + the WebRTC preview bridge.
+  const cameraService = new CameraService();
+  const cameraStream = new CameraStreamService(cameraService);
+  // Any talk stop (user, socket grace expiry, capture ended) closes its camera.
+  liveTalk.setStopHook((talkId) => cameraStream.stop(talkId));
+
   // Wire the PA initiator-leave hook: when the initiator hangs up, replay pa_end
   // to the receivers then tear the conference down.
   listener.setPaInitiatorLeftHandler(
@@ -275,13 +284,14 @@ async function main() {
   });
 
   // Routes
-  app.use("/api/endpoints", createEndpointsRouter(endpointService));
+  app.use("/api/endpoints", createEndpointsRouter(endpointService, cameraService));
   app.use("/api/zones", createZonesRouter());
   app.use("/api/profiles", createProfilesRouter());
   app.use("/api/announcements", createAnnouncementsRouter(announcementService));
   app.use("/api/music", createMusicRouter(announcementService));
   app.use("/api/broadcast", createBroadcastRouter(broadcastService));
-  app.use("/api/talk", createTalkRouter(liveTalk));
+  app.use("/api/talk", createTalkRouter(liveTalk, cameraStream));
+  app.use("/api/camera", createCameraRouter(cameraStream));
   app.use("/api/status", createStatusRouter(endpointService, ami));
   app.use("/api/monitor", createMonitorRouter(monitor, listener, ami));
   app.use("/api/pa-groups", createPaGroupsRouter(paGroupService));

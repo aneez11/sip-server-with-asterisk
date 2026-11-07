@@ -88,6 +88,14 @@ another app):
   endpoint's return audio back would create a feedback loop.
 - History labels these sessions `Device audio [→ <group>] HH:MM:SS`.
 
+### Camera preview (two-way only)
+
+A two-way call can show the room's ONVIF camera next to the mic meter. The video
+is a separate path (`camera → go2rtc → WHEP → <video>`), never part of the SIP
+call, and is best-effort: a camera failure leaves the call untouched. Configure
+it per endpoint (endpoint dialog → Camera). See
+`docs/design-endpoint-camera.md`.
+
 ## Flow
 
 1. Operator selects targets (endpoints and/or PA groups) and presses **Start
