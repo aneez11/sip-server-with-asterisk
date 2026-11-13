@@ -1,0 +1,87 @@
+.pwa-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--pan);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+
+.pwa-action {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--acc);
+  color: var(--acc-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pwa-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mut);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-soft);
+  }
+}
+
+.pwa-install {
+  position: fixed;
+  right: 14px;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  z-index: 90;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--acc) 45%, var(--line));
+  border-radius: 999px;
+  background: var(--pan);
+  color: var(--acc-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--acc2);
+  }
+}
+
+@media (max-width: 900px) {
+  .pwa-banner {
+    left: 12px;
+    right: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+    transform: none;
+  }
+
+  .pwa-install {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}

@@ -1,4 +1,5 @@
-﻿import {
+import { useEffect, useRef } from "react";
+import {
   Activity,
   History,
   Layers,
@@ -28,12 +29,18 @@ const links: { tab: Tab; icon: LucideIcon; label: string }[] = [
 export const IconRail = () => {
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [activeTab]);
 
   return (
     <nav className="rail" aria-label="Primary">
       {links.map(({ tab, icon: Icon, label }) => (
         <button
           key={tab}
+          ref={activeTab === tab ? activeRef : undefined}
           type="button"
           className={`rail-link${activeTab === tab ? " on" : ""}`}
           onClick={() => setActiveTab(tab)}
@@ -47,4 +54,3 @@ export const IconRail = () => {
     </nav>
   );
 };
-

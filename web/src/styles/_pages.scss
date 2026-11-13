@@ -1214,3 +1214,117 @@
 .playlist-list > .state {
   grid-column: 1 / -1;
 }
+
+@media (max-width: 900px) {
+  .screen-head {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .screen-head h1 {
+    font-size: 20px;
+  }
+
+  .screen-actions {
+    width: 100%;
+  }
+
+  .screen-actions .btn {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .grid-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .split-2,
+  .split-broadcast {
+    grid-template-columns: 1fr;
+  }
+
+  .target-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .target-filter {
+    flex-wrap: wrap;
+  }
+
+  .target-filter .input {
+    flex-basis: 100%;
+  }
+
+  .broadcast-bar {
+    flex-wrap: wrap;
+  }
+
+  .music-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .music-column {
+    display: contents;
+  }
+
+  .now-card {
+    order: 1;
+  }
+
+  .playlist-card {
+    order: 2;
+    max-height: none;
+  }
+
+  .zone-card {
+    order: 3;
+  }
+
+  .playlist-list {
+    grid-template-columns: 1fr;
+  }
+
+  .zone-options {
+    grid-template-columns: 1fr;
+  }
+
+  .now-art {
+    width: 84px;
+    height: 84px;
+  }
+
+  .now-info h2 {
+    font-size: 18px;
+  }
+
+  .now-controls {
+    gap: 14px;
+  }
+
+  .upload-progress-head b {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 600px) {
+  .now-body {
+    gap: 12px;
+  }
+
+  .now-art {
+    width: 72px;
+    height: 72px;
+  }
+
+  .now-info h2 {
+    font-size: 17px;
+  }
+
+  .now-library {
+    display: none;
+  }
+}

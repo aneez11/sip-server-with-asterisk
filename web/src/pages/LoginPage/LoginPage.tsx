@@ -108,7 +108,10 @@ export const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
           </button>
 
           <p className="login-api">
-            API: <code>{window.location.origin}/api</code>
+            API: <code>{window.location.origin}/api</code> ·{' '}
+            <a href="/ca.pem" download="infinity-echo-ca.pem">
+              Trust this device (CA)
+            </a>
           </p>
         </form>
       </section>

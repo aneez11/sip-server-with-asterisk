@@ -205,34 +205,34 @@ export const EndpointsPage = () => {
           <tbody>
             {endpoints.map((e) => (
               <tr key={e.id} className={!e.isActive ? "inactive" : ""}>
-                <td className="mono">{e.extension}</td>
-                <td style={{ fontWeight: 600 }}>{e.label}</td>
-                <td className="muted">{e.location || "—"}</td>
-                <td>
+                <td data-label="Extension" className="mono">{e.extension}</td>
+                <td data-label="Label" style={{ fontWeight: 600 }}>{e.label}</td>
+                <td data-label="Location" className="muted">{e.location || "—"}</td>
+                <td data-label="Type">
                   <span className="inline muted" style={{ gap: 5, fontSize: 11 }}>
                     {e.type === "phone" ? <Phone size={11} /> : <Volume2 size={11} />}
                     {e.type}
                   </span>
                 </td>
-                <td>
+                <td data-label="Status">
                   <span className={`chip ${e.registered ? "" : "outline"}`}>
                     <i className="dot" aria-hidden="true" />
                     {e.registered ? "Online" : "Offline"}
                   </span>
                 </td>
-                <td className="mono muted">{e.contactIp ?? "—"}</td>
-                <td className="mono muted" style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <td data-label="IP" className="mono muted">{e.contactIp ?? "—"}</td>
+                <td data-label="Model" className="mono muted" style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {e.userAgent ?? "—"}
                 </td>
-                <td>{e.sipPassword ? <PasswordRow password={e.sipPassword} /> : "—"}</td>
-                <td>
+                <td data-label="SIP password">{e.sipPassword ? <PasswordRow password={e.sipPassword} /> : "—"}</td>
+                <td data-label="Active">
                   <Switch
                     checked={e.isActive}
                     onCheckedChange={(v) => void setEndpointActive(e.id, v)}
                     aria-label={`${e.isActive ? "Deactivate" : "Activate"} ${e.label}`}
                   />
                 </td>
-                <td className="actions">
+                <td data-label="Actions" className="actions">
                   <div className="row-actions">
                     <button
                       type="button"

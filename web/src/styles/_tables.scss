@@ -88,3 +88,73 @@ table.data {
   color: var(--mut);
   font-size: 12px;
 }
+
+@media (max-width: 900px) {
+  .table-wrap {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  table.data {
+    display: block;
+    min-width: 0;
+  }
+
+  table.data thead {
+    display: none;
+  }
+
+  table.data tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  table.data tbody tr {
+    display: block;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--pan);
+  }
+
+  table.data tbody tr:hover {
+    background: var(--pan);
+  }
+
+  table.data tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  table.data tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  table.data tbody td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--mut);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+  }
+
+  table.data td.actions {
+    justify-content: flex-end;
+  }
+
+  table.data td.actions::before {
+    margin-right: auto;
+  }
+}

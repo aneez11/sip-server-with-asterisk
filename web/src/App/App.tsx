@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { Toaster } from "react-hot-toast";
 import { useStore } from "@/store";
 import { hasContextRail } from "@/lib/tabs";
@@ -36,6 +37,20 @@ export const App = () => {
   const init = useStore((s) => s.init);
   const refresh = useStore((s) => s.refresh);
   const activeTab = useStore((s) => s.activeTab);
+  const [contextOpen, setContextOpen] = useState(false);
+
+  useEffect(() => {
+    setContextOpen(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!contextOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [contextOpen]);
 
   const [checked, setChecked] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -96,12 +111,37 @@ export const App = () => {
       <a className="skip-link" href="#workspace">
         Skip to workspace
       </a>
-      <Topbar />
+      <Topbar
+        showContext={showContext}
+        contextOpen={contextOpen}
+        onToggleContext={() => setContextOpen((v) => !v)}
+      />
       <IconRail />
       <main className="workspace" id="workspace" tabIndex={-1}>
         <Page />
       </main>
-      {showContext ? <RightRail /> : null}
+      {showContext ? (
+        <>
+          <div className={`context-wrap${contextOpen ? " open" : ""}`}>
+            <button
+              type="button"
+              className="context-close"
+              onClick={() => setContextOpen(false)}
+              aria-label="Close context panel"
+            >
+              <X size={16} />
+            </button>
+            <RightRail />
+          </div>
+          <button
+            type="button"
+            className={`context-backdrop${contextOpen ? " show" : ""}`}
+            onClick={() => setContextOpen(false)}
+            aria-label="Close context panel"
+            tabIndex={contextOpen ? 0 : -1}
+          />
+        </>
+      ) : null}
       <PlayerBar />
       <StatusBar />
       <Toaster

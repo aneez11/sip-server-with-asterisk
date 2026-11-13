@@ -777,8 +777,11 @@ export const useStore = create<StoreState>((set, get) => {
     },
     addZone: async (name) => {
       try {
-        await api.zones.create(name);
-        await get().refresh();
+        const created = await api.zones.create(name);
+        set((s) => ({
+          zones: [...s.zones.filter((z) => z.id !== created.id), created],
+        }));
+        void get().refresh();
         addToast(`Zone ${name} created`, "success");
       } catch (e) {
         addToast((e as Error).message);

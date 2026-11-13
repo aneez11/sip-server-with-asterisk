@@ -3,6 +3,7 @@ import {
   Clock3,
   LogOut,
   Moon,
+  PanelRight,
   Radio,
   Sun,
   UserRound,
@@ -15,7 +16,15 @@ const fmtClock = (d: Date) =>
     .map((n) => String(n).padStart(2, "0"))
     .join(":");
 
-export const Topbar = () => {
+export const Topbar = ({
+  showContext = false,
+  contextOpen = false,
+  onToggleContext,
+}: {
+  showContext?: boolean;
+  contextOpen?: boolean;
+  onToggleContext?: () => void;
+}) => {
   const endpoints = useStore((s) => s.endpoints);
   const recording = useStore((s) => s.recording);
   const amiConnected = useStore((s) => s.amiConnected);
@@ -82,6 +91,19 @@ export const Topbar = () => {
           <small>Signed in</small>
         </span>
       </span>
+
+      {showContext ? (
+        <button
+          type="button"
+          className={`icon-btn context-toggle${contextOpen ? " on" : ""}`}
+          onClick={onToggleContext}
+          aria-label="Toggle context panel"
+          aria-expanded={contextOpen}
+          title="Targets & details"
+        >
+          <PanelRight size={18} />
+        </button>
+      ) : null}
 
       <button
         type="button"

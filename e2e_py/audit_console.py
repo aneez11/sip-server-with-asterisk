@@ -45,6 +45,10 @@ def shot(page, name):
 
 def run(base_url: str, headed: bool):
     global passed, failed
+    suffix = str(int(time.time()))[-5:]
+    ext = str(6000 + int(time.time()) % 1000)
+    label = f"Audit Test {suffix}"
+    zone_name = f"Audit Zone {suffix}"
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not headed)
         page = browser.new_page(viewport={"width": 1440, "height": 900}, ignore_https_errors=True)
@@ -115,8 +119,8 @@ def run(base_url: str, headed: bool):
         except Exception as e:
             report("add-endpoint dialog opens", False, str(e)[:120])
 
-        page.get_by_placeholder("2001").fill("2005")
-        page.get_by_placeholder("Office Phone").fill("Audit Test")
+        page.get_by_placeholder("2001").fill(ext)
+        page.get_by_placeholder("Office Phone").fill(label)
         page.get_by_role("button", name="Save").click()
         try:
             expect(page.get_by_role("heading", name="Add endpoint")).to_have_count(0, timeout=12000)
@@ -126,13 +130,13 @@ def run(base_url: str, headed: bool):
             page.get_by_role("button", name="Cancel").click(timeout=3000)
             page.wait_for_timeout(500)
 
-        row = page.locator("main").locator("tr", has_text="Audit Test")
-        report("endpoint row created", row.count() > 0, "2005")
+        row = page.locator("main").locator("tr", has_text=label)
+        report("endpoint row created", row.count() > 0, ext)
         report("password row with copy on table row", "SIP password:" in row.first.inner_text(), row.first.inner_text().replace("\n", " | ")[:110])
 
         # ---- 5. Duplicate extension -> clean JSON toast (dialog stays open)
         page.get_by_role("button", name="Add endpoint").click()
-        page.get_by_placeholder("2001").fill("2005")
+        page.get_by_placeholder("2001").fill(ext)
         page.get_by_placeholder("Office Phone").fill("Dup Test")
         page.get_by_role("button", name="Save").click()
         page.wait_for_timeout(1500)
@@ -149,9 +153,13 @@ def run(base_url: str, headed: bool):
 
         # ---- 6. Delete the test endpoint ------------------------------------
         row.locator("button[title=Delete]").click()
-        page.wait_for_timeout(1500)
+        page.wait_for_function(
+            "text => !document.querySelector('main').innerText.includes(text)",
+            arg=label,
+            timeout=20000,
+        )
         body_text = page.locator("main").inner_text()
-        report("test endpoint deleted", "Audit Test" not in body_text)
+        report("test endpoint deleted", label not in body_text)
 
         # ---- 6. Zones manager ----------------------------------------------
         page.get_by_title("Zones", exact=True).click()
@@ -163,10 +171,14 @@ def run(base_url: str, headed: bool):
 
         # zone created
         page.get_by_role("button", name="Add zone").click()
-        page.get_by_role("textbox").fill("Audit Zone")
+        page.get_by_role("textbox").fill(zone_name)
         page.get_by_role("button", name="Save").click()
-        page.wait_for_timeout(1200)
-        report("zone created", "Audit Zone" in page.locator("main").inner_text())
+        page.wait_for_function(
+            "text => document.querySelector('main').innerText.includes(text)",
+            arg=zone_name,
+            timeout=20000,
+        )
+        report("zone created", zone_name in page.locator("main").inner_text())
         shot(page, "04-zones")
 
         # ---- 7. Broadcast tab ----------------------------------------------
@@ -177,16 +189,20 @@ def run(base_url: str, headed: bool):
         except Exception as e:
             report("broadcast page renders", False, str(e)[:120])
 
-        zone_btns = page.get_by_role("button", name="Audit Zone").count()
+        zone_btns = page.get_by_role("button", name=zone_name).count()
         report("zone quick-play button present", zone_btns > 0, f"{zone_btns} button(s)")
         shot(page, "05-broadcast")
 
         # cleanup: delete the audit zone
         page.get_by_title("Zones", exact=True).click()
-        row = page.locator("main .grid-cards .card", has_text="Audit Zone").first
+        row = page.locator("main .grid-cards .card", has_text=zone_name).first
         row.locator("button[title=Delete]").click()
-        page.wait_for_timeout(1200)
-        report("zone deleted", "Audit Zone" not in page.locator("main").inner_text())
+        page.wait_for_function(
+            "text => !document.querySelector('main').innerText.includes(text)",
+            arg=zone_name,
+            timeout=20000,
+        )
+        report("zone deleted", zone_name not in page.locator("main").inner_text())
 
         # ---- 8. Live talk tab ----------------------------------------------
         page.get_by_title("Live talk", exact=True).click()
