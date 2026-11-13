@@ -4,18 +4,19 @@ import { ApiError } from "../errors.js";
 import type { CameraService } from "./camera.js";
 
 /**
- * Bridges a room camera's RTSP stream to the browser for the duration of a
- * two-way talk, using the go2rtc gateway as an RTSP -> WebRTC bridge.
+ * Bridges a camera's RTSP stream to the browser using the go2rtc gateway as an
+ * RTSP -> WebRTC bridge.
  *
- * Flow
- *   1. `ensure(talkId, endpointId)` — only for a live `twoway` talk, only when
- *      the endpoint has an enabled camera. Mints a short-lived, talk-bound
- *      token; the browser receives the token only.
- *   2. Browser POSTs its SDP offer to `/api/camera/whep/<token>`.
- *   3. The API registers the camera with go2rtc (`PUT /api/streams`) under a
- *      name derived from the endpoint, forwards the offer to
- *      `/api/webrtc?src=<name>` and returns the answer.
- *   4. On talk stop the stream is deleted, which closes the camera session.
+ * Two ways in:
+ *   - **Talk-bound** (`ensure(talk, endpointId)`) — a two-way call to an
+ *     endpoint that has a camera. The token carries the talk and camera ids.
+ *   - **Preview** (`preview(cameraId)`) — the Cameras page, with no call active.
+ *     The token carries only the camera id and is revoked on disable/delete.
+ *
+ * In both cases the browser receives only a token; it POSTs its SDP offer to
+ * `/api/camera/whep/<token>`, the API registers the camera with go2rtc
+ * (`PUT /api/streams`) as `cam-<cameraId>`, forwards the offer, and deletes the
+ * stream when the session ends.
  *
  * Codecs: browsers cannot decode HEVC over WebRTC, and UNV cameras commonly
  * report H264 in ONVIF while actually streaming H265. The codec stored at config
@@ -23,19 +24,22 @@ import type { CameraService } from "./camera.js";
  * Direct passthrough is used whenever the camera really is H.264.
  */
 export class CameraStreamService {
-  private tokens = new Map<string, { talkId: string; endpointId: number; exp: number }>();
+  private tokens = new Map<
+    string,
+    { cameraId: number; talkId?: string; endpointId?: number; exp: number }
+  >();
 
   constructor(private readonly camera: CameraService) {}
 
-  private static streamName(endpointId: number): string {
-    return `cam-${endpointId}`;
+  private static streamName(cameraId: number): string {
+    return `cam-${cameraId}`;
   }
 
-  /** Validate that this talk is a two-way call to this endpoint. */
-  ensure(talk: { id: string; mode: string; endpointIds: number[] }, endpointId: number): {
-    token: string;
-    expiresAt: string;
-  } {
+  /** Talk path: validate the talk targets this endpoint and mint a token. */
+  async ensure(
+    talk: { id: string; mode: string; endpointIds: number[] },
+    endpointId: number,
+  ): Promise<{ token: string; expiresAt: string }> {
     if (!config.camera.enabled)
       throw new ApiError(503, "Camera support is disabled on this server");
     if (talk.mode !== "twoway")
@@ -43,41 +47,88 @@ export class CameraStreamService {
     if (!talk.endpointIds.includes(endpointId))
       throw new ApiError(422, "Endpoint is not the target of this talk");
 
+    const cam = await this.camera.getForEndpoint(endpointId);
+    if (!cam.id) throw new ApiError(404, "No camera linked to this endpoint");
+
+    const token = this.mint({
+      cameraId: cam.id,
+      talkId: talk.id,
+      endpointId,
+    });
+    console.log(`[camera] token talk=${talk.id} endpoint=${endpointId} camera=${cam.id}`);
+    return token;
+  }
+
+  /** Preview path: any enabled, configured camera, with no talk involved. */
+  async preview(cameraId: number): Promise<{ token: string; expiresAt: string }> {
+    if (!config.camera.enabled)
+      throw new ApiError(503, "Camera support is disabled on this server");
+    const cam = await this.camera.get(cameraId);
+    if (!cam.enabled) throw new ApiError(422, "Camera is disabled");
+    if (!cam.configured) throw new ApiError(422, "Camera has no host configured");
+
+    const token = this.mint({ cameraId });
+    console.log(`[camera] preview token camera=${cameraId}`);
+    return token;
+  }
+
+  private mint(payload: {
+    cameraId: number;
+    talkId?: string;
+    endpointId?: number;
+  }): { token: string; expiresAt: string } {
     const exp = Date.now() + config.camera.tokenTtlSec * 1000;
-    const payload = Buffer.from(JSON.stringify({ t: talk.id, e: endpointId, x: exp })).toString(
-      "base64url",
-    );
-    const token = `${payload}.${this.sign(payload)}`;
-    this.tokens.set(token, { talkId: talk.id, endpointId, exp });
-    console.log(`[camera] token talk=${talk.id} endpoint=${endpointId}`);
+    const encoded = Buffer.from(
+      JSON.stringify({
+        c: payload.cameraId,
+        t: payload.talkId,
+        e: payload.endpointId,
+        x: exp,
+      }),
+    ).toString("base64url");
+    const token = `${encoded}.${this.sign(encoded)}`;
+    this.tokens.set(token, {
+      cameraId: payload.cameraId,
+      talkId: payload.talkId,
+      endpointId: payload.endpointId,
+      exp,
+    });
     return { token, expiresAt: new Date(exp).toISOString() };
   }
 
-  /** Drop tokens (and gateway streams) belonging to a finished talk. */
+  /** Drop tokens and gateway streams belonging to a finished talk. */
   stop(talkId: string): void {
-    const endpoints = new Set<number>();
+    const cameras = new Set<number>();
     for (const [token, v] of this.tokens) {
       if (v.talkId === talkId) {
         this.tokens.delete(token);
-        endpoints.add(v.endpointId);
+        cameras.add(v.cameraId);
       }
     }
-    for (const id of endpoints) void this.unregister(CameraStreamService.streamName(id));
-    if (endpoints.size > 0)
-      console.log(`[camera] closed talk=${talkId} endpoints=${[...endpoints].join(",")}`);
+    for (const id of cameras) void this.unregister(CameraStreamService.streamName(id));
+    if (cameras.size > 0)
+      console.log(`[camera] closed talk=${talkId} cameras=${[...cameras].join(",")}`);
+  }
+
+  /** Drop every token (and stream) for one camera — used on disable/delete. */
+  async revoke(cameraId: number): Promise<void> {
+    for (const [token, v] of this.tokens) {
+      if (v.cameraId === cameraId) this.tokens.delete(token);
+    }
+    await this.unregister(CameraStreamService.streamName(cameraId));
   }
 
   stopAll(): void {
-    const endpoints = new Set([...this.tokens.values()].map((v) => v.endpointId));
+    const cameras = new Set([...this.tokens.values()].map((v) => v.cameraId));
     this.tokens.clear();
-    for (const id of endpoints) void this.unregister(CameraStreamService.streamName(id));
+    for (const id of cameras) void this.unregister(CameraStreamService.streamName(id));
   }
 
   private sign(payload: string): string {
     return createHmac("sha256", config.sessionSecret).update(payload).digest("base64url");
   }
 
-  private verify(token: string): { endpointId: number; talkId: string } {
+  private verify(token: string): { cameraId: number; talkId?: string } {
     const [payload, signature] = token.split(".");
     if (!payload || !signature) throw new ApiError(401, "Invalid camera token");
     const expected = Buffer.from(this.sign(payload));
@@ -86,13 +137,15 @@ export class CameraStreamService {
       throw new ApiError(401, "Invalid camera token");
 
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-      t: string;
-      e: number;
+      c: number;
+      t?: string;
+      e?: number;
       x: number;
     };
+    if (!parsed.c) throw new ApiError(401, "Invalid camera token");
     if (!parsed.x || parsed.x < Date.now()) throw new ApiError(401, "Camera token expired");
     if (!this.tokens.has(token)) throw new ApiError(401, "Camera session closed");
-    return { endpointId: parsed.e, talkId: parsed.t };
+    return { cameraId: parsed.c, talkId: parsed.t };
   }
 
   /** Forward a WHEP offer for a tokenized camera to the gateway. */
@@ -101,25 +154,25 @@ export class CameraStreamService {
     offer: string,
     contentType: string,
   ): Promise<{ body: string; contentType: string }> {
-    const { endpointId } = this.verify(token);
-    const cam = await this.camera.rtspUriFor(endpointId);
-    if (!cam || !cam.enabled) throw new ApiError(404, "Camera is not enabled for this endpoint");
+    const { cameraId } = this.verify(token);
+    const cam = await this.camera.rtspUriFor(cameraId);
+    if (!cam || !cam.enabled) throw new ApiError(404, "Camera is not enabled");
 
     const codec = (cam.codec || "").toLowerCase();
     const needsTranscode =
       config.camera.transcode === "auto" && codec !== "" && codec !== "h264" && codec !== "avc1";
-    if (needsTranscode && config.camera.transcode === "never") {
+    if (!needsTranscode && config.camera.transcode === "never" && codec !== "" && codec !== "h264") {
       throw new ApiError(422, `Camera streams ${codec.toUpperCase()} — switch it to H.264 to preview`);
     }
 
-    const name = CameraStreamService.streamName(endpointId);
+    const name = CameraStreamService.streamName(cameraId);
     const src = needsTranscode ? `ffmpeg:${cam.uri}#video=h264` : cam.uri;
     await this.register(name, src);
     if (needsTranscode)
-      console.log(`[camera] transcoding ${codec} -> h264 endpoint=${endpointId}`);
+      console.log(`[camera] transcoding ${codec} -> h264 camera=${cameraId}`);
 
     const url = `${config.camera.gatewayUrl}/api/webrtc?src=${encodeURIComponent(name)}`;
-    console.log(`[camera] whep endpoint=${endpointId} stream=${name} offer=${offer.length}B`);
+    console.log(`[camera] whep camera=${cameraId} stream=${name} offer=${offer.length}B`);
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": contentType || "application/sdp" },
@@ -128,16 +181,16 @@ export class CameraStreamService {
     });
     const body = await res.text();
     if (!res.ok) {
-      console.warn(`[camera] gateway error endpoint=${endpointId} status=${res.status}`);
+      console.warn(`[camera] gateway error camera=${cameraId} status=${res.status}`);
       throw new ApiError(502, `Camera gateway rejected the stream (HTTP ${res.status})`, {
         gateway: [body.slice(0, 300)],
       });
     }
-    console.log(`[camera] whep ok endpoint=${endpointId} answer=${body.length}B`);
+    console.log(`[camera] whep ok camera=${cameraId} answer=${body.length}B`);
     return { body, contentType: res.headers.get("content-type") ?? "application/sdp" };
   }
 
-  /** Register (or replace) the gateway stream for an endpoint. */
+  /** Register (or replace) the gateway stream for a camera. */
   private async register(name: string, src: string): Promise<void> {
     // Drop a stale producer first so an old camera session cannot linger.
     await this.unregister(name);

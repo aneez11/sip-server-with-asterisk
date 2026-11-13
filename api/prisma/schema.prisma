@@ -16,62 +16,99 @@ model User {
 }
 
 model Endpoint {
-  id          Int          @id @default(autoincrement())
-  extension   String       @unique
-  label       String
-  location    String       @default("")
-  type        String // phone | speaker
-  isActive    Boolean      @default(true)
-  sipPassword String
-  userAgent   String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  zones       ZoneMember[]
-  paGroupsAsInitiator PaGroup[] @relation("PaInitiator")
+  id                  Int               @id @default(autoincrement())
+  extension           String            @unique
+  label               String
+  location            String            @default("")
+  type                String // phone | speaker
+  isActive            Boolean           @default(true)
+  sipPassword         String
+  userAgent           String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  zones               ZoneMember[]
+  paGroupsAsInitiator PaGroup[]         @relation("PaInitiator")
   paGroupsAsReceiver  PaGroupReceiver[]
-  camera      EndpointCamera?
+  camera              EndpointCamera?
+  cameraRecord        Camera?           @relation("EndpointCameraLink")
+}
+
+// A camera is a first-class record: it may exist on its own (corridor, gate)
+// or be linked to one endpoint so a two-way call can show the room.
+model Camera {
+  id              Int       @id @default(autoincrement())
+  name            String    @default("")
+  location        String    @default("")
+  // Optional 1:1 link: at most one camera serves a given endpoint.
+  endpointId      Int?      @unique
+  endpoint        Endpoint? @relation("EndpointCameraLink", fields: [endpointId], references: [id], onDelete: SetNull)
+  enabled         Boolean   @default(false)
+  host            String    @default("")
+  port            Int       @default(80)
+  username        String    @default("")
+  passwordCipher  String    @default("")
+  // Multi-sensor cameras / NVR-fronted groups expose several channels.
+  channel         Int       @default(1)
+  profileToken    String    @default("")
+  profileName     String    @default("")
+  rtspUri         String    @default("")
+  snapshotUri     String    @default("")
+  preferredStream String    @default("sub")
+  // Real codec as pulled over RTSP (ONVIF's report can lie: UNV cameras say
+  // H264 while streaming H265). Used to decide on transcoding.
+  streamCodec     String    @default("")
+  streamWidth     Int?
+  streamHeight    Int?
+  lastCheckAt     DateTime?
+  lastCheckOk     Boolean?
+  lastCheckError  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([name])
 }
 
 // Optional ONVIF camera attached to a room endpoint. Credentials are stored
 // encrypted (see api/src/lib/secret-box.ts) and never leave the API.
 model EndpointCamera {
-  id               Int      @id @default(autoincrement())
-  endpointId       Int      @unique
-  endpoint         Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
-  enabled          Boolean  @default(false)
-  host             String
-  port             Int      @default(80)
-  username         String   @default("")
-  passwordCipher   String   @default("")
+  id              Int       @id @default(autoincrement())
+  endpointId      Int       @unique
+  endpoint        Endpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  enabled         Boolean   @default(false)
+  host            String
+  port            Int       @default(80)
+  username        String    @default("")
+  passwordCipher  String    @default("")
   // Multi-sensor cameras / NVR-fronted groups expose several channels.
-  channel          Int      @default(1)
-  profileToken     String   @default("")
-  profileName      String   @default("")
-  rtspUri          String   @default("")
-  snapshotUri      String   @default("")
-  preferredStream  String   @default("sub")
+  channel         Int       @default(1)
+  profileToken    String    @default("")
+  profileName     String    @default("")
+  rtspUri         String    @default("")
+  snapshotUri     String    @default("")
+  preferredStream String    @default("sub")
   // Real codec as pulled over RTSP (ONVIF's report can lie: UNV cameras say
   // H264 while streaming H265). Used to decide on transcoding.
-  streamCodec      String   @default("")
-  streamWidth      Int?
-  streamHeight     Int?
-  lastCheckAt      DateTime?
-  lastCheckOk      Boolean?
-  lastCheckError   String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  streamCodec     String    @default("")
+  streamWidth     Int?
+  streamHeight    Int?
+  lastCheckAt     DateTime?
+  lastCheckOk     Boolean?
+  lastCheckError  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model Zone {
-  id                   Int          @id @default(autoincrement())
-  name                 String       @unique
-  beep                 Boolean      @default(true)
-  volume               Int?
-  announcementId       Int?
-  autoAnswerProfileId  Int?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
-  members              ZoneMember[]
+  id                  Int          @id @default(autoincrement())
+  name                String       @unique
+  beep                Boolean      @default(true)
+  volume              Int?
+  announcementId      Int?
+  autoAnswerProfileId Int?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  members             ZoneMember[]
 }
 
 model AutoAnswerProfile {
@@ -102,36 +139,36 @@ model BroadcastLog {
   zoneId      Int?
   endpointIds Json
   title       String    @default("")
-  durationSec Float?    // expected playback length (from the announcement)
+  durationSec Float? // expected playback length (from the announcement)
   startedAt   DateTime?
   endedAt     DateTime?
   createdAt   DateTime  @default(now())
 }
 
 model Announcement {
-  id           Int      @id @default(autoincrement())
-  name         String
-  filename     String
-  originalName String
-  originalFile String   @default("")
-  fileSize     Int
-  duration     Float?   // seconds of the normalized WAV (for progress bars)
-  flash        Boolean  @default(false)
-  music        Boolean  @default(false)
-  broadcast    Boolean? // null = legacy row: !music
-  createdAt    DateTime @default(now())
+  id              Int       @id @default(autoincrement())
+  name            String
+  filename        String
+  originalName    String
+  originalFile    String    @default("")
+  fileSize        Int
+  duration        Float? // seconds of the normalized WAV (for progress bars)
+  flash           Boolean   @default(false)
+  music           Boolean   @default(false)
+  broadcast       Boolean? // null = legacy row: !music
+  createdAt       DateTime  @default(now())
   paGroupsAsStart PaGroup[] @relation("PaStart")
   paGroupsAsEnd   PaGroup[] @relation("PaEnd")
 }
 
 model EndpointCodecLog {
-  id               Int      @id @default(autoincrement())
-  endpointId       Int?
-  extension        String   @default("")
-  endpointModel    String   @default("")
-  negotiatedCodec  String
-  broadcastId      Int?
-  createdAt        DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  endpointId      Int?
+  extension       String   @default("")
+  endpointModel   String   @default("")
+  negotiatedCodec String
+  broadcastId     Int?
+  createdAt       DateTime @default(now())
 
   @@index([endpointId])
   @@index([createdAt])
@@ -142,35 +179,36 @@ model EndpointCodecLog {
 // pa_end play at the boundaries. Fully static dialplan + dynamic member legs
 // (the receiver list is resolved via the API at trigger time).
 model PaGroup {
-  id                     Int      @id @default(autoincrement())
-  name                   String   @unique
-  extension              String   @unique
+  id                    Int               @id @default(autoincrement())
+  name                  String            @unique
+  extension             String            @unique
   // Device that may trigger the group (null = any endpoint dialing `extension`).
-  initiatorEndpointId    Int?
-  initiatorEndpoint      Endpoint? @relation("PaInitiator", fields: [initiatorEndpointId], references: [id], onDelete: SetNull)
-  paStartAnnouncementId  Int?
-  paStartAnnouncement    Announcement? @relation("PaStart", fields: [paStartAnnouncementId], references: [id], onDelete: SetNull)
-  paEndAnnouncementId    Int?
-  paEndAnnouncement      Announcement? @relation("PaEnd", fields: [paEndAnnouncementId], references: [id], onDelete: SetNull)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  initiatorEndpointId   Int?
+  initiatorEndpoint     Endpoint?         @relation("PaInitiator", fields: [initiatorEndpointId], references: [id], onDelete: SetNull)
+  paStartAnnouncementId Int?
+  paStartAnnouncement   Announcement?     @relation("PaStart", fields: [paStartAnnouncementId], references: [id], onDelete: SetNull)
+  paEndAnnouncementId   Int?
+  paEndAnnouncement     Announcement?     @relation("PaEnd", fields: [paEndAnnouncementId], references: [id], onDelete: SetNull)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
   // Receiver endpoints (the ones that hear the announcement).
-  receivers              PaGroupReceiver[]
+  receivers             PaGroupReceiver[]
 }
 
 // Join table: a PA group's receiver endpoints.
 model PaGroupReceiver {
-  groupId     Int
-  endpointId  Int
-  group       PaGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  endpoint    Endpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  groupId    Int
+  endpointId Int
+  group      PaGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  endpoint   Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
   @@id([groupId, endpointId])
 }
 
 // Created by express-mysql-session at runtime (NOT managed by Prisma). Column
 // types mirror the runtime-created table so `prisma db push` doesn't alter it.
 model sessions {
-  session_id String    @id @db.VarChar(128)
-  expires    Int       @db.UnsignedInt
-  data       String?   @db.MediumText
+  session_id String  @id @db.VarChar(128)
+  expires    Int     @db.UnsignedInt
+  data       String? @db.MediumText
 }

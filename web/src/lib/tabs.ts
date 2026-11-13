@@ -2,6 +2,7 @@ export const TAB_IDS = [
   "broadcast",
   "media",
   "monitor",
+  "cameras",
   "talk",
   "music",
   "endpoints",

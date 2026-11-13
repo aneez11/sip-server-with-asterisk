@@ -7,6 +7,10 @@ import { OnvifClient, pickPreviewProfile, probeRtspCodec, type OnvifProfile } fr
 import { encryptSecret, decryptSecret, canDecrypt } from "../lib/secret-box.js";
 
 export interface CameraConfigInput {
+  name?: string;
+  location?: string;
+  /** null clears the endpoint link; undefined leaves it untouched. */
+  endpointId?: number | null;
   enabled: boolean;
   host: string;
   port: number;
@@ -19,6 +23,12 @@ export interface CameraConfigInput {
 }
 
 export interface CameraView {
+  id: number;
+  name: string;
+  location: string;
+  endpointId: number | null;
+  /** Populated by list(); get() leaves it null. */
+  endpointLabel: string | null;
   enabled: boolean;
   configured: boolean;
   reachable: boolean | null;
@@ -42,7 +52,10 @@ export interface CameraView {
 }
 
 interface CameraRow {
-  endpointId: number;
+  id: number;
+  name: string;
+  location: string;
+  endpointId: number | null;
   enabled: boolean;
   host: string;
   port: number;
@@ -62,7 +75,12 @@ interface CameraRow {
   lastCheckError: string | null;
 }
 
-const EMPTY_VIEW: CameraView = {
+export const EMPTY_VIEW: CameraView = {
+  id: 0,
+  name: "",
+  location: "",
+  endpointId: null,
+  endpointLabel: null,
   enabled: false,
   configured: false,
   reachable: null,
@@ -85,8 +103,10 @@ const EMPTY_VIEW: CameraView = {
 };
 
 /**
- * Per-endpoint ONVIF camera configuration and probing.
+ * ONVIF camera configuration and probing.
  *
+ * A camera is its own record; linking one to an endpoint is optional so
+ * endpoint-less cameras (corridors, gates) can be managed from the Cameras page.
  * Credentials never leave the API: the operator writes a password, the API
  * stores it AES-GCM encrypted and only ever reports `hasPassword`. Every camera
  * failure is a soft failure — the voice path must not depend on this service.
@@ -97,55 +117,124 @@ export class CameraService {
       throw new ApiError(503, "Camera support is disabled on this server");
   }
 
-  /** Camera summary for the endpoint list (no secrets). */
+  /** Every camera, alphabetically, with endpoint labels for the cards. */
+  async list(): Promise<CameraView[]> {
+    const [rows, endpoints] = await Promise.all([
+      prisma.camera.findMany({ orderBy: { name: "asc" } }),
+      prisma.endpoint.findMany({ select: { id: true, label: true, extension: true } }),
+    ]);
+    const labels = new Map(
+      endpoints.map((e) => [e.id, `${e.label} (${e.extension})`]),
+    );
+    return rows.map((r) => ({
+      ...toView(r as CameraRow),
+      endpointLabel: r.endpointId != null ? (labels.get(r.endpointId) ?? null) : null,
+    }));
+  }
+
+  /** Camera summary keyed by endpoint id, for the endpoint list. */
   async summaries(
     endpointIds?: number[],
   ): Promise<Map<number, { enabled: boolean; configured: boolean; reachable: boolean | null }>> {
-    const rows = await prisma.endpointCamera.findMany({
-      where: endpointIds ? { endpointId: { in: endpointIds } } : undefined,
+    const rows = await prisma.camera.findMany({
+      where: {
+        endpointId: endpointIds ? { in: endpointIds } : { not: null },
+      },
+      select: { endpointId: true, enabled: true, host: true, lastCheckOk: true },
     });
-    return new Map(
-      rows.map((r) => [
-        r.endpointId,
-        { enabled: r.enabled, configured: Boolean(r.host), reachable: r.lastCheckOk ?? null },
-      ]),
-    );
+    const out = new Map<
+      number,
+      { enabled: boolean; configured: boolean; reachable: boolean | null }
+    >();
+    for (const r of rows) {
+      if (r.endpointId == null) continue;
+      out.set(r.endpointId, {
+        enabled: r.enabled,
+        configured: Boolean(r.host),
+        reachable: r.lastCheckOk ?? null,
+      });
+    }
+    return out;
   }
 
-  async get(endpointId: number): Promise<CameraView> {
-    const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
-    await this.assertEndpoint(endpointId);
-    return toView(row);
+  async get(id: number): Promise<CameraView> {
+    const row = await prisma.camera.findUnique({ where: { id } });
+    if (!row) throw new ApiError(404, "Camera not found");
+    return toView(row as CameraRow);
   }
 
-  private async assertEndpoint(endpointId: number): Promise<void> {
+  /** Endpoint adapter: the camera linked to an endpoint, if any. */
+  async getForEndpoint(endpointId: number): Promise<CameraView> {
     const endpoint = await prisma.endpoint.findUnique({ where: { id: endpointId } });
     if (!endpoint) throw new ApiError(404, "Endpoint not found");
+    const row = await prisma.camera.findUnique({ where: { endpointId } });
+    return row ? toView(row as CameraRow) : { ...EMPTY_VIEW };
+  }
+
+  async create(input: CameraConfigInput): Promise<CameraView> {
+    this.assertEnabled();
+    const name = (input.name ?? "").trim();
+    if (!name) throw new ApiError(422, "Camera name is required");
+    await this.assertEndpointFree(input.endpointId ?? null, null);
+
+    const row = await prisma.camera.create({
+      data: {
+        name,
+        location: (input.location ?? "").trim(),
+        endpointId: input.endpointId ?? null,
+        enabled: false,
+        host: "",
+        port: 80,
+        username: "",
+        channel: 1,
+        preferredStream: "sub",
+      },
+    });
+    return toView(row as CameraRow);
+  }
+
+  private async assertEndpointFree(
+    endpointId: number | null,
+    selfId: number | null,
+  ): Promise<void> {
+    if (endpointId == null) return;
+    const endpoint = await prisma.endpoint.findUnique({ where: { id: endpointId } });
+    if (!endpoint) throw new ApiError(422, "Endpoint not found");
+    const taken = await prisma.camera.findUnique({ where: { endpointId } });
+    if (taken && taken.id !== selfId) {
+      throw new ApiError(422, "That endpoint already has a camera", {
+        endpointId: ["already assigned to another camera"],
+      });
+    }
   }
 
   /** Save config; probes the camera inline so the UI can show the result. */
-  async save(endpointId: number, input: CameraConfigInput): Promise<CameraView> {
+  async save(id: number, input: CameraConfigInput): Promise<CameraView> {
     this.assertEnabled();
-    await this.assertEndpoint(endpointId);
-    const existing = await prisma.endpointCamera.findUnique({ where: { endpointId } });
+    const existing = await prisma.camera.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "Camera not found");
+    await this.assertEndpointFree(
+      input.endpointId === undefined ? existing.endpointId : input.endpointId,
+      id,
+    );
 
     const providedPassword = input.password !== undefined && input.password !== "";
     const passwordCipher = providedPassword
       ? encryptSecret(input.password as string)
-      : (existing?.passwordCipher ?? "");
+      : existing.passwordCipher;
     const password = providedPassword
       ? (input.password as string)
-      : safeDecrypt(existing?.passwordCipher ?? "");
+      : safeDecrypt(existing.passwordCipher);
 
     let profiles: OnvifProfile[] = [];
     let error: string | undefined;
-    let rtspUri = existing?.rtspUri ?? "";
-    let snapshotUri = existing?.snapshotUri ?? "";
-    let profileToken = input.profileToken || existing?.profileToken || "";
-    let profileName = existing?.profileName ?? "";
-    let streamCodec = existing?.streamCodec ?? "";
-    let streamWidth: number | null = existing?.streamWidth ?? null;
-    let streamHeight: number | null = existing?.streamHeight ?? null;
+    let rtspUri = existing.rtspUri;
+    let snapshotUri = existing.snapshotUri;
+    let profileToken = input.profileToken || existing.profileToken;
+    let profileName = existing.profileName;
+    let streamCodec = existing.streamCodec;
+    let streamWidth: number | null = existing.streamWidth;
+    let streamHeight: number | null = existing.streamHeight;
 
     if (input.host) {
       try {
@@ -185,42 +274,71 @@ export class CameraService {
       }
     }
 
-    const data = {
-      enabled: input.enabled,
-      host: input.host,
-      port: input.port,
-      username: input.username,
-      passwordCipher,
-      channel: input.channel,
-      preferredStream: input.preferredStream,
-      profileToken,
-      profileName,
-      rtspUri,
-      snapshotUri,
-      streamCodec,
-      streamWidth,
-      streamHeight,
-      lastCheckAt: new Date(),
-      lastCheckOk: error ? false : input.host ? true : null,
-      lastCheckError: error ?? null,
-    };
-    const row = existing
-      ? await prisma.endpointCamera.update({ where: { endpointId }, data })
-      : await prisma.endpointCamera.create({ data: { endpointId, ...data } });
-    return { ...toView(row), profiles };
+    const name = input.name?.trim() || existing.name || input.host;
+    const row = await prisma.camera.update({
+      where: { id },
+      data: {
+        name,
+        location: (input.location ?? existing.location).trim(),
+        endpointId:
+          input.endpointId === undefined ? existing.endpointId : input.endpointId,
+        enabled: input.enabled,
+        host: input.host,
+        port: input.port,
+        username: input.username,
+        passwordCipher,
+        channel: input.channel,
+        preferredStream: input.preferredStream,
+        profileToken,
+        profileName,
+        rtspUri,
+        snapshotUri,
+        streamCodec,
+        streamWidth,
+        streamHeight,
+        lastCheckAt: new Date(),
+        lastCheckOk: error ? false : input.host ? true : null,
+        lastCheckError: error ?? null,
+      },
+    });
+    return { ...toView(row as CameraRow), profiles };
   }
 
-  async remove(endpointId: number): Promise<void> {
-    await prisma.endpointCamera.deleteMany({ where: { endpointId } });
+  async remove(id: number): Promise<void> {
+    const row = await prisma.camera.findUnique({ where: { id } });
+    if (!row) throw new ApiError(404, "Camera not found");
+    await prisma.camera.delete({ where: { id } });
+  }
+
+  /** Endpoint adapter: unlink (or delete) the endpoint's camera. */
+  async removeForEndpoint(endpointId: number): Promise<void> {
+    const row = await prisma.camera.findUnique({ where: { endpointId } });
+    if (row) await prisma.camera.delete({ where: { id: row.id } });
+  }
+
+  /** Endpoint adapter: save by endpoint id, creating the link if needed. */
+  async saveForEndpoint(endpointId: number, input: CameraConfigInput): Promise<CameraView> {
+    const existing = await prisma.camera.findUnique({ where: { endpointId } });
+    if (existing) {
+      return this.save(existing.id, { ...input, endpointId });
+    }
+    const created = await this.create({
+      ...input,
+      name: input.name?.trim() || `Camera for endpoint ${endpointId}`,
+      endpointId,
+    });
+    return this.save(created.id, { ...input, endpointId });
   }
 
   /** "Test connection" — probe stored config, or unsaved values from the form. */
   async test(
-    endpointId: number,
+    cameraId: number | undefined,
     overrides?: { host?: string; port?: number; username?: string; password?: string },
   ): Promise<{ ok: boolean; error?: string; profiles?: OnvifProfile[]; streamUri?: string; codec?: string }> {
     this.assertEnabled();
-    const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
+    const row = cameraId
+      ? await prisma.camera.findUnique({ where: { id: cameraId } })
+      : null;
     const host = overrides?.host?.trim() || row?.host || "";
     if (!host) throw new ApiError(422, "Enter the camera's host or IP address first");
 
@@ -243,8 +361,8 @@ export class CameraService {
         : { ok: false, error: "no stream URI" };
 
       if (row) {
-        await prisma.endpointCamera.update({
-          where: { endpointId },
+        await prisma.camera.update({
+          where: { id: row.id },
           data: {
             lastCheckAt: new Date(),
             lastCheckOk: true,
@@ -267,8 +385,8 @@ export class CameraService {
     } catch (e) {
       const message = (e as Error).message;
       if (row) {
-        await prisma.endpointCamera.update({
-          where: { endpointId },
+        await prisma.camera.update({
+          where: { id: row.id },
           data: { lastCheckAt: new Date(), lastCheckOk: false, lastCheckError: message },
         });
       }
@@ -276,27 +394,47 @@ export class CameraService {
     }
   }
 
+  /** Endpoint adapter for test(): resolve the linked camera first. */
+  async testForEndpoint(
+    endpointId: number,
+    overrides?: { host?: string; port?: number; username?: string; password?: string },
+  ) {
+    const row = await prisma.camera.findUnique({ where: { endpointId } });
+    return this.test(row?.id, overrides);
+  }
+
   /**
    * RTSP URI with credentials, for the media gateway only. The stored URI never
    * contains the password; it is injected here at pull time.
    */
   async rtspUriFor(
-    endpointId: number,
+    cameraId: number,
   ): Promise<{ uri: string; snapshotUri: string; enabled: boolean; codec: string } | null> {
-    const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
+    const row = await prisma.camera.findUnique({ where: { id: cameraId } });
     if (!row || !row.rtspUri) return null;
     const u = new URL(row.rtspUri);
     if (row.username) {
       u.username = row.username;
       u.password = safeDecrypt(row.passwordCipher);
     }
-    return { uri: u.toString(), snapshotUri: row.snapshotUri, enabled: row.enabled, codec: row.streamCodec };
+    return {
+      uri: u.toString(),
+      snapshotUri: row.snapshotUri,
+      enabled: row.enabled,
+      codec: row.streamCodec,
+    };
+  }
+
+  /** Endpoint adapter: resolve the endpoint's camera, then its RTSP URI. */
+  async rtspUriForEndpoint(endpointId: number) {
+    const row = await prisma.camera.findUnique({ where: { endpointId } });
+    return row ? this.rtspUriFor(row.id) : null;
   }
 
   /** Proxied JPEG so the camera's credentials never reach the browser. */
-  async snapshot(endpointId: number): Promise<{ body: Buffer; contentType: string }> {
+  async snapshot(cameraId: number): Promise<{ body: Buffer; contentType: string }> {
     this.assertEnabled();
-    const row = await prisma.endpointCamera.findUnique({ where: { endpointId } });
+    const row = await prisma.camera.findUnique({ where: { id: cameraId } });
     if (!row?.snapshotUri) throw new ApiError(404, "No snapshot URI for this camera");
     const u = new URL(row.snapshotUri);
     if (row.username) {
@@ -305,11 +443,48 @@ export class CameraService {
     }
     return fetchBinary(u.toString());
   }
+
+  /** Endpoint adapter for snapshot(). */
+  async snapshotForEndpoint(endpointId: number) {
+    const row = await prisma.camera.findUnique({ where: { endpointId } });
+    if (!row) throw new ApiError(404, "No camera linked to this endpoint");
+    return this.snapshot(row.id);
+  }
+
+  /**
+   * Turn a discovered ONVIF device into a camera record. Credentials are
+   * optional: a discovered camera that rejects anonymous probes is created
+   * disabled with its host filled in so the operator only has to add the user.
+   */
+  async addDiscovered(device: {
+    host: string;
+    port?: number;
+    name?: string;
+    location?: string;
+  }): Promise<CameraView> {
+    const existing = await prisma.camera.findFirst({ where: { host: device.host } });
+    if (existing) throw new ApiError(422, "That camera is already added");
+    return this.create({
+      enabled: false,
+      host: device.host,
+      port: device.port ?? 80,
+      username: "",
+      channel: 1,
+      preferredStream: "sub",
+      name: device.name || device.host,
+      location: device.location ?? "",
+    });
+  }
 }
 
 export function toView(row: CameraRow | null): CameraView {
   if (!row) return EMPTY_VIEW;
   return {
+    id: row.id,
+    name: row.name,
+    location: row.location,
+    endpointId: row.endpointId,
+    endpointLabel: null,
     enabled: row.enabled,
     configured: Boolean(row.host),
     reachable: row.lastCheckOk ?? null,
@@ -341,7 +516,7 @@ function safeDecrypt(ciphertext: string): string {
 }
 
 /** Add credentials to an ONVIF-provided RTSP URI (used for local probing only). */
-function withCredentials(uri: string, username: string, password: string): string {
+export function withCredentials(uri: string, username: string, password: string): string {
   if (!username) return uri;
   try {
     const u = new URL(uri);

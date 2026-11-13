@@ -1,3 +1,59 @@
+.target-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+
+  .search-field {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+
+    > svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--mut);
+      pointer-events: none;
+    }
+  }
+
+  .input {
+    width: 100%;
+    min-height: 40px;
+    font-size: 12px;
+  }
+
+  .search-field .input {
+    padding-left: 34px;
+  }
+
+  > select.input {
+    width: auto;
+    min-width: 150px;
+  }
+
+  > span {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .target-filter {
+    flex-wrap: wrap;
+
+    .search-field {
+      flex-basis: 100%;
+    }
+
+    > select.input {
+      width: 100%;
+    }
+  }
+}
+
 // Page-specific compositions ------------------------------------------------
 
 .target-grid {
@@ -829,7 +885,8 @@
   }
 }
 
-.camera-settings {
+.camera-settings,
+.camera-form {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px;
@@ -1091,33 +1148,6 @@
   }
 }
 
-.target-filter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  position: relative;
-
-  > svg {
-    position: absolute;
-    left: 12px;
-    color: var(--mut);
-    pointer-events: none;
-  }
-
-  .input {
-    flex: 1;
-    width: auto;
-    min-height: 40px;
-    padding-left: 34px;
-    font-size: 12px;
-  }
-
-  > span {
-    white-space: nowrap;
-  }
-}
-
 .track-play {
   flex: 1;
   min-width: 0;
@@ -1251,14 +1281,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .target-filter {
-    flex-wrap: wrap;
-  }
-
-  .target-filter .input {
-    flex-basis: 100%;
-  }
-
   .broadcast-bar {
     flex-wrap: wrap;
   }
@@ -1326,5 +1348,175 @@
 
   .now-library {
     display: none;
+  }
+}
+
+// ---- Cameras page ---------------------------------------------------------
+
+.camera-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.camera-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #0b1116;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .camera-thumb-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #7b8b86;
+    font-size: 11px;
+    background: linear-gradient(145deg, #0b1116, #14201d);
+  }
+
+  .camera-thumb-actions {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    display: flex;
+    gap: 4px;
+  }
+}
+
+.camera-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  flex: 1;
+}
+
+.camera-card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+
+  b {
+    font-size: 13.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    display: block;
+    margin-top: 2px;
+    color: var(--mut);
+    font-size: 10.5px;
+  }
+}
+
+.camera-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 10.5px;
+  color: var(--mut);
+  font-variant-numeric: tabular-nums;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+.camera-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.camera-preview-dialog {
+  width: min(880px, 96vw);
+}
+
+.camera-preview-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #060b0a;
+
+  video,
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .camera-preview-note {
+    position: absolute;
+    inset: auto 10px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(6, 11, 10, 0.72);
+    color: #d7e5df;
+    font-size: 11px;
+  }
+}
+
+.discover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.discover-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+
+  .discover-main {
+    flex: 1;
+    min-width: 0;
+
+    b {
+      display: block;
+      font-size: 12.5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    small {
+      display: block;
+      margin-top: 2px;
+      color: var(--mut);
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+    }
   }
 }

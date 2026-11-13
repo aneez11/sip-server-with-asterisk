@@ -126,12 +126,14 @@ export const BroadcastPage = () => {
       />
 
       <div className="target-filter">
-        <Search size={14} />
-        <Input
-          placeholder="Filter endpoints, zones or PA groups by name, extension or location"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        <div className="search-field">
+          <Search size={14} />
+          <Input
+            placeholder="Filter endpoints, zones or PA groups by name, extension or location"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
         <span className="muted tiny">
           {visibleTargetCount} target{visibleTargetCount === 1 ? "" : "s"}
         </span>

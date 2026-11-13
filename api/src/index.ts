@@ -28,6 +28,7 @@ import {
   createBroadcastRouter,
   createTalkRouter,
   createCameraRouter,
+  createCamerasRouter,
   createMusicRouter,
   createStatusRouter,
   createProfilesRouter,
@@ -61,6 +62,60 @@ function toInt16(data: ArrayBuffer | Uint8Array): Int16Array | null {
   return null;
 }
 
+/**
+ * One-way backfill: cameras used to live in EndpointCamera (one per endpoint).
+ * Copy them into Camera on boot and keep the old table unread. Idempotent, so a
+ * restart after the migration is a no-op.
+ */
+async function migrateLegacyCameras(): Promise<void> {
+  try {
+    const legacy = await prisma.$queryRawUnsafe<
+      Array<Record<string, unknown>>
+    >("SELECT * FROM EndpointCamera").catch(() => []);
+    if (!Array.isArray(legacy) || legacy.length === 0) return;
+
+    for (const row of legacy) {
+      const endpointId = Number(row.endpointId);
+      if (!Number.isFinite(endpointId)) continue;
+      const existing = await prisma.camera.findUnique({ where: { endpointId } });
+      if (existing) continue;
+      const endpoint = await prisma.endpoint.findUnique({
+        where: { id: endpointId },
+        select: { label: true, location: true },
+      });
+      await prisma.camera.create({
+        data: {
+          name: endpoint?.label ?? `Camera ${endpointId}`,
+          location: endpoint?.location ?? "",
+          endpointId,
+          enabled: Boolean(row.enabled),
+          host: String(row.host ?? ""),
+          port: Number(row.port ?? 80) || 80,
+          username: String(row.username ?? ""),
+          passwordCipher: String(row.passwordCipher ?? ""),
+          channel: Number(row.channel ?? 1) || 1,
+          profileToken: String(row.profileToken ?? ""),
+          profileName: String(row.profileName ?? ""),
+          rtspUri: String(row.rtspUri ?? ""),
+          snapshotUri: String(row.snapshotUri ?? ""),
+          preferredStream: String(row.preferredStream ?? "sub"),
+          streamCodec: String(row.streamCodec ?? ""),
+          streamWidth: row.streamWidth == null ? null : Number(row.streamWidth),
+          streamHeight: row.streamHeight == null ? null : Number(row.streamHeight),
+          lastCheckAt: row.lastCheckAt ? new Date(String(row.lastCheckAt)) : null,
+          lastCheckOk:
+            row.lastCheckOk == null ? null : Boolean(Number(row.lastCheckOk)),
+          lastCheckError:
+            row.lastCheckError == null ? null : String(row.lastCheckError),
+        },
+      });
+      console.log(`[camera] migrated endpoint camera endpoint=${endpointId}`);
+    }
+  } catch (e) {
+    console.warn("[camera] legacy camera migration skipped:", (e as Error).message);
+  }
+}
+
 async function seedAdmin() {
   const existing = await prisma.user.findUnique({
     where: { username: config.admin.username },
@@ -90,6 +145,7 @@ async function main() {
     console.warn("Prisma schema sync skipped:", (err as Error).message);
   }
   await seedAdmin();
+  await migrateLegacyCameras();
 
   // AMI client
   const ami = new AmiClient({
@@ -291,6 +347,7 @@ async function main() {
   app.use("/api/music", createMusicRouter(announcementService));
   app.use("/api/broadcast", createBroadcastRouter(broadcastService));
   app.use("/api/talk", createTalkRouter(liveTalk, cameraStream));
+  app.use("/api/cameras", createCamerasRouter(cameraService, cameraStream));
   app.use("/api/camera", createCameraRouter(cameraStream));
   app.use("/api/status", createStatusRouter(endpointService, ami));
   app.use("/api/monitor", createMonitorRouter(monitor, listener, ami));

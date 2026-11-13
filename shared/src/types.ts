@@ -173,6 +173,11 @@ export interface OnvifProfileView {
 }
 
 export interface CameraView {
+  id: number;
+  name: string;
+  location: string;
+  endpointId: number | null;
+  endpointLabel: string | null;
   enabled: boolean;
   configured: boolean;
   reachable: boolean | null;
@@ -192,6 +197,16 @@ export interface CameraView {
   lastCheckAt: string | null;
   lastCheckError: string | null;
   profiles: OnvifProfileView[];
+}
+
+export interface DiscoveredCamera {
+  host: string;
+  port: number;
+  xaddr: string;
+  name?: string;
+  hardware?: string;
+  location?: string;
+  alreadyAdded: boolean;
 }
 
 export interface CameraStartResponse {

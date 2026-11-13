@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createSocket } from "node:dgram";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { request as httpRequest } from "node:http";
@@ -379,6 +380,263 @@ export class OnvifClient {
     );
     return tagText(xml, "Uri");
   }
+}
+
+// ---- WS-Discovery ---------------------------------------------------------
+// ONVIF devices answer a multicast Probe on 239.255.255.250:3702 with a
+// ProbeMatch carrying their device-service XAddr. That is enough to list the
+// cameras on the LAN without scanning IP ranges.
+
+const WS_DISCOVERY_ADDR = "239.255.255.250";
+const WS_DISCOVERY_PORT = 3702;
+
+export interface DiscoveredDevice {
+  /** Host only (no scheme, no port) — what the camera form asks for. */
+  host: string;
+  port: number;
+  /** Device-service URL as advertised by the camera. */
+  xaddr: string;
+  /** Best-effort name derived from the advertised scopes. */
+  name?: string;
+  hardware?: string;
+  location?: string;
+}
+
+function probeEnvelope(): string {
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"' +
+    ' xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing"' +
+    ' xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"' +
+    ' xmlns:dn="http://www.onvif.org/ver10/network/wsdl">' +
+    '<e:Header>' +
+    '<w:MessageID>uuid:' + randomUUID() + '</w:MessageID>' +
+    '<w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To>' +
+    '<w:Action e:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action>' +
+    '</e:Header>' +
+    '<e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body>' +
+    '</e:Envelope>'
+  );
+}
+
+/** Pull host/port out of a device-service XAddr like http://10.0.0.5/onvif/device_service. */
+function parseXaddr(xaddr: string): { host: string; port: number } | null {
+  try {
+    const u = new URL(xaddr);
+    return { host: u.hostname, port: Number(u.port) || 80 };
+  } catch {
+    return null;
+  }
+}
+
+/** First value of a scope URI such as onvif://www.onvif.org/name/Front%20Gate. */
+function scopeValue(scopes: string, key: string): string | undefined {
+  for (const raw of scopes.split(/\s+/)) {
+    const idx = raw.indexOf('/' + key + '/');
+    if (idx < 0) continue;
+    const value = raw.slice(idx + key.length + 2);
+    if (!value) continue;
+    try {
+      return decodeURIComponent(value).replace(/_/g, ' ');
+    } catch {
+      return value.replace(/_/g, ' ');
+    }
+  }
+  return undefined;
+}
+
+export function parseProbeMatches(xml: string): DiscoveredDevice[] {
+  const out: DiscoveredDevice[] = [];
+  for (const [, body] of elements(xml, "ProbeMatch")) {
+    const xaddrs = tagText(body, "XAddrs");
+    if (!xaddrs) continue;
+    // A multi-sensor camera advertises several service URLs; the first is the
+    // device service.
+    const xaddr = xaddrs.split(/\s+/).find((v) => v.startsWith("http")) ?? "";
+    const parsed = parseXaddr(xaddr);
+    if (!parsed) continue;
+    const scopes = tagText(body, "Scopes") ?? "";
+    out.push({
+      host: parsed.host,
+      port: parsed.port,
+      xaddr,
+      name: scopeValue(scopes, "name") ?? scopeValue(scopes, "hardware"),
+      hardware: scopeValue(scopes, "hardware"),
+      location: scopeValue(scopes, "location"),
+    });
+  }
+  return out;
+}
+
+/**
+ * Unicast fallback: ask every host on the local /24 whether it speaks ONVIF.
+ *
+ * WS-Discovery multicast does not cross Docker's bridge NAT, so a containerised
+ * API cannot see the LAN broadcast domain. A bounded TCP sweep does work
+ * (ordinary outbound HTTP), so discovery still finds cameras in this deployment.
+ * Only unauthenticated GetSystemDateAndTime is sent — a SOAP answer means "there
+ * is a device here"; credentials are added by the operator afterwards.
+ */
+export async function sweepOnvifSubnet(
+  hostIp: string,
+  timeoutMs = 1500,
+  concurrency = 64,
+): Promise<DiscoveredDevice[]> {
+  const parts = hostIp.split(".");
+  if (parts.length !== 4) return [];
+  const prefix = parts.slice(0, 3).join(".");
+  const self = Number(parts[3]);
+  const targets: string[] = [];
+  for (let i = 1; i <= 254; i++) {
+    if (i === self) continue;
+    targets.push(`${prefix}.${i}`);
+  }
+
+  const found: DiscoveredDevice[] = [];
+  let index = 0;
+
+  const probe = async (host: string) => {
+    const body =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<s:Envelope xmlns:s="${NS_ENVELOPE}"><s:Body>` +
+      `<GetSystemDateAndTime xmlns="${NS_DEVICE}"/></s:Body></s:Envelope>`;
+    try {
+      const res = await httpPostWithTimeout(
+        `http://${host}/onvif/device_service`,
+        body,
+        timeoutMs,
+      );
+      // Any SOAP envelope (even a fault) means an ONVIF device lives there.
+      if (/<(?:w+:)?Envelope/i.test(res.body)) {
+        found.push({
+          host,
+          port: 80,
+          xaddr: `http://${host}/onvif/device_service`,
+        });
+      }
+    } catch {
+      // not an ONVIF device, or offline
+    }
+  };
+
+  const worker = async () => {
+    for (;;) {
+      const next = index++;
+      if (next >= targets.length) return;
+      await probe(targets[next]);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  return found;
+}
+
+/** POST with a caller-supplied timeout (httpPost has a fixed one). */
+function httpPostWithTimeout(
+  url: string,
+  body: string,
+  timeoutMs: number,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = httpRequest(
+      {
+        hostname: u.hostname,
+        port: u.port || 80,
+        path: `${u.pathname}${u.search}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/soap+xml; charset=utf-8",
+          "Content-Length": Buffer.byteLength(body),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () =>
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }),
+        );
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("onvif sweep timeout")));
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+/**
+ * Multicast a WS-Discovery Probe and collect answers until the timeout.
+ *
+ * Runs inside the API container on the LAN, so it only sees cameras that share
+ * that broadcast domain. Multicast may be disabled on some networks; the caller
+ * treats an empty list as "nothing found" rather than an error.
+ */
+export async function discoverOnvifDevices(
+  options: { timeoutMs?: number; subnetFrom?: string } = {},
+): Promise<DiscoveredDevice[]> {
+  const timeoutMs = options.timeoutMs ?? 3000;
+  const byMulticast = await multicastProbe(timeoutMs);
+  const seen = new Set(byMulticast.map((d) => d.host));
+
+  if (options.subnetFrom) {
+    const swept = await sweepOnvifSubnet(options.subnetFrom, 1200);
+    for (const device of swept) {
+      if (seen.has(device.host)) continue;
+      seen.add(device.host);
+      byMulticast.push(device);
+    }
+  }
+  return byMulticast;
+}
+
+function multicastProbe(timeoutMs: number): Promise<DiscoveredDevice[]> {
+  return new Promise((resolve) => {
+    const found = new Map<string, DiscoveredDevice>();
+    let socket: ReturnType<typeof createSocket>;
+    try {
+      socket = createSocket({ type: "udp4", reuseAddr: true });
+    } catch {
+      resolve([]);
+      return;
+    }
+
+    let closed = false;
+    const finish = () => {
+      if (closed) return;
+      closed = true;
+      try {
+        socket.close();
+      } catch {
+        // already closed
+      }
+      resolve([...found.values()]);
+    };
+
+    socket.on("message", (msg) => {
+      const xml = msg.toString("utf8");
+      if (!/ProbeMatches/i.test(xml)) return;
+      for (const device of parseProbeMatches(xml)) {
+        if (!found.has(device.host)) found.set(device.host, device);
+      }
+    });
+    socket.on("error", () => finish());
+
+    socket.bind({ port: 0 }, () => {
+      try {
+        socket.setBroadcast(true);
+        socket.setMulticastTTL(2);
+      } catch {
+        // best effort
+      }
+      const probe = Buffer.from(probeEnvelope(), "utf8");
+      socket.send(probe, 0, probe.length, WS_DISCOVERY_PORT, WS_DISCOVERY_ADDR, () => {
+        // a failed send still resolves with whatever arrived via finish()
+      });
+    });
+
+    setTimeout(finish, Math.max(500, Math.min(timeoutMs, 8000)));
+  });
 }
 
 /** Parse `<Profiles token="...">` elements (Media1 and Media2 share the shape). */

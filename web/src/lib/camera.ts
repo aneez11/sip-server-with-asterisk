@@ -26,6 +26,33 @@ export async function attachCamera(
   video: HTMLVideoElement,
 ): Promise<CameraSession> {
   const { token } = await api.talk.camera.start(talkId, endpointId);
+  return attachWithToken(token, video, () => {
+    void api.talk.camera.stop(talkId).catch(() => undefined);
+  });
+}
+
+/**
+ * Preview a camera from the Cameras page with no call in progress.
+ *
+ * Same WHEP negotiation as a talk, but the token is minted by
+ * `POST /api/cameras/:id/preview`; stopping only closes the local peer
+ * connection (the server drops the token when the stream ends or the camera is
+ * disabled).
+ */
+export async function attachCameraPreview(
+  cameraId: number,
+  video: HTMLVideoElement,
+): Promise<CameraSession> {
+  const { token } = await api.cameras.preview(cameraId);
+  return attachWithToken(token, video);
+}
+
+/** Shared WHEP negotiation for talk-bound and preview tokens. */
+async function attachWithToken(
+  token: string,
+  video: HTMLVideoElement,
+  onStop?: () => void,
+): Promise<CameraSession> {
   const pc = new RTCPeerConnection({ iceServers: [] });
   const stop = () => {
     try {
@@ -35,7 +62,7 @@ export async function attachCamera(
       // ignore
     }
     video.srcObject = null;
-    void api.talk.camera.stop(talkId).catch(() => undefined);
+    onStop?.();
   };
 
   try {
@@ -93,10 +120,27 @@ export function startSnapshotPoll(
   img: HTMLImageElement,
   intervalMs = 800,
 ): () => void {
+  return pollImage(api.camera.snapshotUrl(endpointId), img, intervalMs);
+}
+
+/** Same poller for the Cameras page (camera-id snapshot route). */
+export function startCameraSnapshotPoll(
+  cameraId: number,
+  img: HTMLImageElement,
+  intervalMs = 2000,
+): () => void {
+  return pollImage(api.cameras.snapshotUrl(cameraId), img, intervalMs);
+}
+
+function pollImage(
+  baseUrl: string,
+  img: HTMLImageElement,
+  intervalMs: number,
+): () => void {
   let alive = true;
   const tick = () => {
     if (!alive) return;
-    img.src = `${api.camera.snapshotUrl(endpointId)}?t=${Date.now()}`;
+    img.src = `${baseUrl}?t=${Date.now()}`;
   };
   tick();
   const timer = setInterval(tick, intervalMs);

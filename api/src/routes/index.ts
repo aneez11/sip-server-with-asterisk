@@ -10,6 +10,9 @@ import {
   endpointUpdateSchema,
   talkSchema,
   cameraConfigSchema,
+  cameraCreateSchema,
+  cameraDiscoverAddSchema,
+  cameraDiscoverSchema,
   cameraStartSchema,
   cameraTestSchema,
 } from "../validation/schemas.js";
@@ -22,6 +25,7 @@ import type { MonitorService } from "../live/monitor.js";
 import type { AmiClient } from "../ami/client.js";
 import type { AmiListener } from "../ami/listener.js";
 import type { PaGroupService } from "../services/pa-groups.js";
+import { discoverOnvifDevices } from "../lib/onvif.js";
 import type { CameraService } from "../services/camera.js";
 import type { CameraStreamService } from "../services/camera-stream.js";
 
@@ -39,7 +43,7 @@ export function createEndpointsRouter(
   // ---- ONVIF camera attached to an endpoint --------------------------------
   router.get("/:id/camera", async (req, res, next) => {
     try {
-      res.json(await camera.get(Number(req.params.id)));
+      res.json(await camera.getForEndpoint(Number(req.params.id)));
     } catch (e) {
       next(e);
     }
@@ -48,7 +52,7 @@ export function createEndpointsRouter(
   router.put("/:id/camera", async (req, res, next) => {
     try {
       const body = cameraConfigSchema.parse(req.body);
-      res.json(await camera.save(Number(req.params.id), body));
+      res.json(await camera.saveForEndpoint(Number(req.params.id), body));
     } catch (e) {
       next(e);
     }
@@ -56,7 +60,7 @@ export function createEndpointsRouter(
 
   router.delete("/:id/camera", async (req, res, next) => {
     try {
-      await camera.remove(Number(req.params.id));
+      await camera.removeForEndpoint(Number(req.params.id));
       res.status(204).end();
     } catch (e) {
       next(e);
@@ -66,7 +70,7 @@ export function createEndpointsRouter(
   router.post("/:id/camera/test", async (req, res, next) => {
     try {
       const body = cameraTestSchema.parse(req.body ?? {});
-      res.json(await camera.test(Number(req.params.id), body));
+      res.json(await camera.testForEndpoint(Number(req.params.id), body));
     } catch (e) {
       next(e);
     }
@@ -75,7 +79,7 @@ export function createEndpointsRouter(
   // Proxied JPEG: the camera's credentials never reach the browser.
   router.get("/:id/camera/snapshot", async (req, res, next) => {
     try {
-      const snap = await camera.snapshot(Number(req.params.id));
+      const snap = await camera.snapshotForEndpoint(Number(req.params.id));
       res.setHeader("Content-Type", snap.contentType);
       res.setHeader("Cache-Control", "no-store");
       res.send(snap.body);
@@ -439,7 +443,7 @@ export function createTalkRouter(
       const talk = liveTalk.getSession(req.params.talkId);
       if (!talk) throw new ApiError(404, "Talk not found");
       const { endpointId } = cameraStartSchema.parse(req.body);
-      res.json(cameraStream.ensure(talk, endpointId));
+      res.json(await cameraStream.ensure(talk, endpointId));
     } catch (e) {
       next(e);
     }
@@ -458,6 +462,137 @@ export function createTalkRouter(
 }
 
 /**
+ * Camera fleet management (the Cameras page).
+ *
+ * Cameras are standalone records with an optional endpoint link, so a corridor
+ * camera can be managed without inventing a phone for it. Preview mints a token
+ * that is not bound to a talk; the WHEP proxy in createCameraRouter accepts it.
+ */
+export function createCamerasRouter(
+  camera: CameraService,
+  stream: CameraStreamService,
+): Router {
+  const router = Router();
+
+  router.get("/", async (_req, res, next) => {
+    try {
+      res.json(await camera.list());
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // LAN discovery must come before "/:id" so it is not read as an id.
+  router.post("/discover", async (req, res, next) => {
+    try {
+      const { timeoutMs } = cameraDiscoverSchema.parse(req.body ?? {});
+      const devices = await discoverOnvifDevices({ timeoutMs, subnetFrom: config.hostIp });
+      const known = new Set(
+        (await camera.list())
+          .map((c) => c.host)
+          .filter((h): h is string => Boolean(h)),
+      );
+      res.json(devices.map((d) => ({ ...d, alreadyAdded: known.has(d.host) })));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/discover/add", async (req, res, next) => {
+    try {
+      const body = cameraDiscoverAddSchema.parse(req.body ?? {});
+      res.status(201).json(await camera.addDiscovered(body));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/", async (req, res, next) => {
+    try {
+      const body = cameraCreateSchema.parse(req.body ?? {});
+      res.status(201).json(
+        await camera.create({
+          ...body,
+          enabled: false,
+          host: "",
+          port: 80,
+          username: "",
+          channel: 1,
+          preferredStream: "sub",
+        }),
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/:id", async (req, res, next) => {
+    try {
+      res.json(await camera.get(Number(req.params.id)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.put("/:id", async (req, res, next) => {
+    try {
+      const body = cameraConfigSchema.parse(req.body);
+      const saved = await camera.save(Number(req.params.id), body);
+      // A disabled camera must not keep a live preview token around.
+      if (!saved.enabled) await stream.revoke(saved.id);
+      res.json(saved);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete("/:id", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      await camera.remove(id);
+      await stream.revoke(id);
+      res.status(204).end();
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/:id/test", async (req, res, next) => {
+    try {
+      const body = cameraTestSchema.parse(req.body ?? {});
+      res.json(await camera.test(Number(req.params.id), body));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.get("/:id/snapshot", async (req, res, next) => {
+    try {
+      const snap = await camera.snapshot(Number(req.params.id));
+      res.setHeader("Content-Type", snap.contentType);
+      res.setHeader("Cache-Control", "no-store");
+      res.send(snap.body);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Preview token for a camera with no call in progress. */
+  router.post("/:id/preview", async (req, res, next) => {
+    try {
+      if (!config.camera.enabled)
+        throw new ApiError(503, "Camera support is disabled on this server");
+      res.json(await stream.preview(Number(req.params.id)));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  return router;
+}
+
+/**
+
  * WHEP proxy: the browser posts an SDP offer here with its short-lived token and
  * the API forwards it to go2rtc together with the camera's RTSP URI. Keeping the
  * proxy in the API means the console stays on HTTPS (no mixed content) and the

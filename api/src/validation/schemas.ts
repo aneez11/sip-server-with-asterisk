@@ -90,6 +90,33 @@ export const cameraConfigSchema = z.object({
   profileToken: z.string().max(120).optional(),
 });
 
+/** Create a camera record; config can be filled in later. */
+export const cameraCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  location: z.string().trim().max(190).default(""),
+  endpointId: z.coerce.number().int().positive().nullable().optional(),
+});
+
+/** Add a camera found by network discovery. */
+export const cameraDiscoverAddSchema = z.object({
+  host: z
+    .string()
+    .trim()
+    .min(1)
+    .max(190)
+    .regex(/^[A-Za-z0-9._-]+$/, "Enter a hostname or IP address"),
+  port: z.coerce.number().int().min(1).max(65535).default(80),
+  name: z.string().trim().max(120).optional(),
+  location: z.string().trim().max(190).optional(),
+  username: z.string().max(120).optional(),
+  password: z.string().max(200).optional(),
+});
+
+/** WS-Discovery probe window; discovery is LAN-only and instant. */
+export const cameraDiscoverSchema = z.object({
+  timeoutMs: z.coerce.number().int().min(500).max(8000).default(3000),
+});
+
 export const cameraStartSchema = z.object({
   endpointId: z.coerce.number().int().positive(),
 });

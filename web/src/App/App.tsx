@@ -17,6 +17,7 @@ import { EndpointsPage } from "@/pages/EndpointsPage/EndpointsPage";
 import { ZonesPage } from "@/pages/ZonesPage/ZonesPage";
 import { HistoryPage } from "@/pages/HistoryPage/HistoryPage";
 import { MonitorPage } from "@/pages/MonitorPage/MonitorPage";
+import { CamerasPage } from "@/pages/CamerasPage/CamerasPage";
 import { PaGroupsPage } from "@/pages/PaGroupsPage/PaGroupsPage";
 import { MediaManagerPage } from "@/pages/MediaManagerPage/MediaManagerPage";
 import { LoginPage } from "@/pages/LoginPage/LoginPage";
@@ -25,6 +26,7 @@ const PAGES = {
   broadcast: BroadcastPage,
   media: MediaManagerPage,
   monitor: MonitorPage,
+  cameras: CamerasPage,
   talk: LiveTalkPage,
   music: MusicPlayerPage,
   endpoints: EndpointsPage,

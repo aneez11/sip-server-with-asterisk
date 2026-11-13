@@ -13,6 +13,7 @@ import type {
   CameraView,
   CameraStartResponse,
   CameraStatusResponse,
+  DiscoveredCamera,
   Zone,
 } from "@infinity/shared";
 
@@ -52,6 +53,20 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     );
   }
   return data as T;
+}
+
+export interface CameraConfigBody {
+  name?: string;
+  location?: string;
+  endpointId?: number | null;
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  channel: number;
+  preferredStream: "sub" | "main";
+  profileToken?: string;
 }
 
 export const api = {
@@ -297,6 +312,53 @@ export const api = {
     },
   },
 
+  // Cameras page: standalone camera records with an optional endpoint link.
+  cameras: {
+    list: () => request<CameraView[]>("/api/cameras"),
+    get: (id: number) => request<CameraView>(`/api/cameras/${id}`),
+    create: (body: { name: string; location?: string; endpointId?: number | null }) =>
+      request<CameraView>("/api/cameras", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    save: (id: number, body: CameraConfigBody) =>
+      request<CameraView>(`/api/cameras/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    remove: (id: number) =>
+      request<void>(`/api/cameras/${id}`, { method: "DELETE" }),
+    test: (
+      id: number,
+      cfg?: { host: string; port: number; username: string; password?: string },
+    ) =>
+      request<{ ok: boolean; error?: string; streamUri?: string; codec?: string }>(
+        `/api/cameras/${id}/test`,
+        { method: "POST", body: JSON.stringify(cfg ?? {}) },
+      ),
+    snapshotUrl: (id: number) => `/api/cameras/${id}/snapshot`,
+    /** Preview token that is not bound to a talk. */
+    preview: (id: number) =>
+      request<CameraStartResponse>(`/api/cameras/${id}/preview`, { method: "POST" }),
+    discover: (timeoutMs = 3000) =>
+      request<DiscoveredCamera[]>("/api/cameras/discover", {
+        method: "POST",
+        body: JSON.stringify({ timeoutMs }),
+      }),
+    addDiscovered: (body: {
+      host: string;
+      port?: number;
+      name?: string;
+      location?: string;
+      username?: string;
+      password?: string;
+    }) =>
+      request<CameraView>("/api/cameras/discover/add", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  },
+
   camera: {
     get: (endpointId: number) =>
       request<CameraView>(`/api/endpoints/${endpointId}/camera`),
@@ -319,7 +381,10 @@ export const api = {
       }),
     remove: (endpointId: number) =>
       request<void>(`/api/endpoints/${endpointId}/camera`, { method: "DELETE" }),
-    test: (endpointId: number, cfg?: { host: string; port: number; username: string; password?: string }) =>
+    test: (
+      endpointId: number,
+      cfg?: { host: string; port: number; username: string; password?: string },
+    ) =>
       request<{ ok: boolean; error?: string; streamUri?: string; codec?: string }>(
         `/api/endpoints/${endpointId}/camera/test`,
         { method: "POST", body: JSON.stringify(cfg ?? {}) },

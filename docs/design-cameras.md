@@ -3,8 +3,8 @@
 A dedicated **Cameras** page so cameras become first-class records instead of a
 hidden section inside an endpoint's edit dialog.
 
-> **Status:** planned, not implemented. This doc is the source of truth for the
-> shape below; code lands phase by phase.
+> **Status:** phases 1-3 shipped; phase 4 partially shipped (test-all and the
+> assign quick action are still open). See "Implementation notes" at the end.
 
 Labels: **must** = required for the feature to count as shipped, **should** =
 expected, **may** = follow-up.
@@ -246,3 +246,41 @@ the endpoint dialog's camera section still behaves identically.
 Phase 1 ~½ day (model, migration, service generalization, tests), Phase 2 ~¼
 day, Phase 3 ~1 day (page + form extraction), Phase 4 incremental. Phase 1 and 2
 ship dark behind the existing `CAMERA_ENABLED` switch.
+
+## Implementation notes (what actually shipped)
+
+| File | Role |
+|---|---|
+| `api/prisma/schema.prisma` (`Camera`) | standalone camera record, optional unique `endpointId`, `@@index([enabled])`, `@@index([name])` |
+| `api/src/index.ts` (`migrateLegacyCameras`) | one-way, idempotent backfill of `EndpointCamera` into `Camera` on boot (raw SQL read, so it survives the old table being dropped later) |
+| `api/src/services/camera.ts` | cameraId-based CRUD/probe/snapshot plus `getForEndpoint`/`saveForEndpoint`/`removeForEndpoint`/`testForEndpoint`/`snapshotForEndpoint`/`rtspUriForEndpoint` adapters |
+| `api/src/services/camera-stream.ts` | tokens `{ c, t?, e?, x }`; `preview(cameraId)` mints a talk-free token; `revoke(cameraId)` drops tokens and the gateway stream; stream name `cam-<cameraId>` |
+| `api/src/lib/onvif.ts` | `discoverOnvifDevices` (WS-Discovery multicast) + `sweepOnvifSubnet` (unicast fallback) + `parseProbeMatches` |
+| `api/src/routes/index.ts` | `createCamerasRouter` at `/api/cameras`; endpoint camera routes are thin adapters |
+| `web/src/pages/CamerasPage/` | fleet page: counts, search, status filter, card grid, preview dialog, discovery dialog |
+| `web/src/components/CameraForm/` | shared form used by the page and the endpoint dialog |
+| `web/src/components/CameraSettings/` | now a 12-line wrapper selecting the endpoint transport |
+
+**Discovery runs two probes.** WS-Discovery multicast is sent first; it only
+works when the API shares the LAN broadcast domain. This deployment runs the API
+in a Docker bridge network with NAT, so multicast never arrives — a bounded
+unicast sweep of `HOST_IP`'s /24 (64 concurrent `GetSystemDateAndTime` probes,
+1.2 s each, ~6 s total for a /24) is what actually finds cameras. Discovered
+devices are added disabled with host/port only; the operator then supplies
+credentials in the edit dialog. `sweepOnvifSubnet` is a self-checked parser test
+on a synthetic ProbeMatch, not a live-camera test.
+
+**Preview without a talk** works: `POST /api/cameras/:id/preview` mints a token,
+the WHEP proxy accepts it, and disabling the camera returns 401 "Camera session
+closed" on the next WHEP call (verified live). A disabled camera is rejected
+with 422 before a token is minted.
+
+**Deviation from the plan:** there is no "Test" / "Toggle" action button on the
+card. Test lives in the edit form (where the unsaved host/credentials are) and
+the enable toggle is the switch in that form, because testing or toggling from a
+card without the form would need another dialog round-trip. Preview is capped to
+online cameras. Delete asks for confirmation.
+
+**Not done (phase 4):** bulk "Test all", the assign-to-endpoint quick action from
+a card, and a card-level enable toggle. Status auto-refresh every 60 s while the
+page is visible is implemented.
