@@ -2,11 +2,7 @@ import { useEffect, useState } from "react";
 import { Music, Radio, X } from "lucide-react";
 import { useStore } from "@/store";
 import { Progress } from "@/components/Progress/Progress";
-
-const fmtDur = (s: number) => {
-  const sec = Math.max(0, Math.round(s));
-  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
-};
+import { formatDuration } from "@/lib/format";
 
 /** Global now-playing strip above the status bar. Hidden when idle. */
 export const PlayerBar = () => {
@@ -73,9 +69,9 @@ export const PlayerBar = () => {
           <small>{sub}</small>
         </div>
         <div className="player-progress">
-          <span>{fmtDur(elapsed)}</span>
+          <span>{formatDuration(elapsed)}</span>
           <Progress value={pct} />
-          <span>{fmtDur(total)}</span>
+          <span>{formatDuration(total)}</span>
         </div>
       </div>
       <button

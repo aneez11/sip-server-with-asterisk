@@ -4,18 +4,13 @@ import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
 import { Card } from '@/components/Card/Card';
 import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
+import { formatDurationOrBlank } from '@/lib/format';
 import { api } from '@/lib/api/client';
 
 const fmtSize = (b: number) => {
   if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
   if (b >= 1024) return Math.round(b / 1024) + ' KB';
   return b + ' B';
-};
-const fmtDur = (s: number | null | undefined) => {
-  if (!s || s <= 0) return '';
-  const sec = Math.round(s);
-  const m = Math.floor(sec / 60);
-  return `${m}:${String(sec % 60).padStart(2, '0')}`;
 };
 
 /** Unified media library — announcements and music in one place. */
@@ -118,7 +113,7 @@ export const MediaManagerPage = () => {
                 </div>
                 <div className="announce-meta">
                   {a.originalName} · {fmtSize(a.fileSize)}
-                  {a.duration ? ` · ${fmtDur(a.duration)}` : ''}
+                  {a.duration ? ` · ${formatDurationOrBlank(a.duration)}` : ''}
                 </div>
               </div>
               <div className="inline" style={{ gap: 2, flexShrink: 0 }}>

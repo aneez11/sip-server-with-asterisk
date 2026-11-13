@@ -5,16 +5,12 @@ import { Button } from '@/components/Button/Button';
 import { Card } from '@/components/Card/Card';
 import { Checkbox } from '@/components/Checkbox/Checkbox';
 import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
+import { formatDuration } from '@/lib/format';
 
 const fmtSize = (b: number) => {
   if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
   if (b >= 1024) return Math.round(b / 1024) + ' KB';
   return b + ' B';
-};
-
-const fmtDur = (s: number) => {
-  const sec = Math.max(0, Math.round(s));
-  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 };
 
 export const MusicPlayerPage = () => {
@@ -119,8 +115,8 @@ export const MusicPlayerPage = () => {
               <i style={{ width: `${progress * 100}%` }} />
             </div>
             <div className="inline" style={{ justifyContent: 'space-between', font: 'var(--font-mono)', fontSize: 11, color: 'var(--mut)' }}>
-              <span>{fmtDur(elapsed)}</span>
-              <span>-{fmtDur(Math.max(0, duration - elapsed))}</span>
+              <span>{formatDuration(elapsed)}</span>
+              <span>-{formatDuration(Math.max(0, duration - elapsed))}</span>
             </div>
           </div>
 

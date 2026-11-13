@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type Theme = 'light' | 'dark';
 
-const STORAGE_KEY = 'infinity-echo-theme';
+const STORAGE_KEY = 'infinity-echo-theme'; // keep in sync with public/theme-init.js
 
 function initialTheme(): Theme {
   if (typeof window === 'undefined') return 'light';
