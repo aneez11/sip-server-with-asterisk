@@ -25,7 +25,7 @@ entire console in Node.js + TypeScript with a React SPA.
 
 ## Non-goals
 
-- UNV camera/ONVIF management (device-specific; out of scope).
+- Camera recording, PTZ control and cloud access (see `design-cameras.md` for the ONVIF camera management page).
 - True real-time WebRTC mic streaming (blocked: the Ubuntu-packaged Asterisk cannot
   bind its pjsip WebSocket transport; would need a custom build or a WebRTC↔SIP gateway).
 - Public/internet exposure — LAN-only, single admin console.
@@ -80,5 +80,5 @@ All `/api/*` routes except login require the session. No registration.
 ## Theme
 
 Web UI uses the shared SCSS design system (`web/src/styles/`), shell grid
-80/1fr/320 × 56/1fr/auto/44, icon rail: Broadcast / Media / Monitor / Live talk
+80/1fr/320 × 56/1fr/auto/44, icon rail: Broadcast / Media / Monitor / Cameras / Live talk
 / Music / Endpoints / Zones / PA groups / History.
