@@ -97,6 +97,14 @@ export const cameraCreateSchema = z.object({
   endpointId: z.coerce.number().int().positive().nullable().optional(),
 });
 
+/** Metadata / link / enable changes that skip the ONVIF probe. */
+export const cameraPatchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  location: z.string().trim().max(190).optional(),
+  endpointId: z.coerce.number().int().positive().nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+
 /** Add a camera found by network discovery. */
 export const cameraDiscoverAddSchema = z.object({
   host: z

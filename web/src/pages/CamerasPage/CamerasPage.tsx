@@ -16,6 +16,8 @@ import { Button } from '@/components/Button/Button';
 import { Card } from '@/components/Card/Card';
 import { Input } from '@/components/Input/Input';
 import { Badge } from '@/components/Badge/Badge';
+
+import { Switch } from '@/components/Switch/Switch';
 import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
 import { CameraForm, type CameraFormTransport } from '@/components/CameraForm/CameraForm';
 import {
@@ -62,6 +64,7 @@ export const CamerasPage = () => {
   const [discovering, setDiscovering] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
   const [found, setFound] = useState<DiscoveredCamera[] | null>(null);
+  const [testingAll, setTestingAll] = useState<{ done: number; total: number } | null>(null);
 
   const load = async () => {
     try {
@@ -122,6 +125,37 @@ export const CamerasPage = () => {
     await load();
   };
 
+  /** Card-level enable toggle and endpoint link — metadata only, no probe. */
+  const patchCamera = async (
+    cam: CameraView,
+    patch: { enabled?: boolean; endpointId?: number | null },
+  ) => {
+    setCameras((prev) =>
+      prev.map((c) => (c.id === cam.id ? { ...c, ...patch } : c)),
+    );
+    try {
+      await api.cameras.patch(cam.id, patch);
+    } finally {
+      await load();
+    }
+  };
+
+  /** Probe every configured camera one after another so cameras are not hammered. */
+  const testAll = async () => {
+    const targets = cameras.filter((c) => c.configured);
+    if (targets.length === 0) return;
+    setTestingAll({ done: 0, total: targets.length });
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        await api.cameras.test(targets[i].id).catch(() => undefined);
+        setTestingAll({ done: i + 1, total: targets.length });
+      }
+    } finally {
+      setTestingAll(null);
+      await load();
+    }
+  };
+
   const discover = async () => {
     setDiscovering(true);
     setFound(null);
@@ -155,6 +189,20 @@ export const CamerasPage = () => {
         subtitle={`${counts.online} online · ${counts.unreachable} unreachable · ${counts.disabled} disabled — ONVIF cameras for room previews and monitoring`}
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void testAll()}
+              disabled={testingAll !== null || cameras.length === 0}
+              title="Probe every configured camera"
+            >
+              {testingAll ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <RefreshCw size={13} />
+              )}
+              {testingAll ? `Testing ${testingAll.done}/${testingAll.total}` : 'Test all'}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setDiscoverOpen(true)}>
               <Radar size={13} /> Discover
             </Button>
@@ -224,6 +272,9 @@ export const CamerasPage = () => {
               onPreview={() => setPreview(cam)}
               onEdit={() => setEditing(cam)}
               onDelete={() => void remove(cam)}
+              onToggle={(enabled) => void patchCamera(cam, { enabled })}
+              onAssign={(endpointId) => void patchCamera(cam, { endpointId })}
+              endpoints={endpointOptions}
             />
           ))}
         </div>
@@ -361,11 +412,17 @@ function CameraCard({
   onPreview,
   onEdit,
   onDelete,
+  onToggle,
+  onAssign,
+  endpoints,
 }: {
   camera: CameraView;
   onPreview: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggle: (enabled: boolean) => void;
+  onAssign: (endpointId: number | null) => void;
+  endpoints: { id: number; label: string; extension: string }[];
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const status = statusOf(camera);
@@ -431,16 +488,32 @@ function CameraCard({
             <b title={camera.name}>{camera.name || camera.host || 'Unnamed camera'}</b>
             <small>{camera.location || 'No location set'}</small>
           </div>
-          <Badge variant={badgeVariant}>{STATUS_LABEL[status]}</Badge>
+          <div className="camera-card-badges">
+            <Badge variant={badgeVariant}>{STATUS_LABEL[status]}</Badge>
+            <Switch
+              checked={camera.enabled}
+              onCheckedChange={onToggle}
+              aria-label={`${camera.enabled ? 'Disable' : 'Enable'} ${camera.name}`}
+            />
+          </div>
         </div>
 
         <div className="camera-meta">
           <span className="mono">{camera.host ? `${camera.host}:${camera.port ?? 80}` : '—'}</span>
-          {camera.endpointLabel ? (
-            <span>{camera.endpointLabel}</span>
-          ) : (
-            <span className="muted">Unassigned</span>
-          )}
+          <select
+            className="camera-assign"
+            value={camera.endpointId ?? ''}
+            onChange={(e) => onAssign(e.target.value ? Number(e.target.value) : null)}
+            aria-label={`Endpoint for ${camera.name}`}
+            title="Link this camera to an endpoint"
+          >
+            <option value="">Unassigned</option>
+            {endpoints.map((ep) => (
+              <option key={ep.id} value={ep.id}>
+                {ep.label} ({ep.extension})
+              </option>
+            ))}
+          </select>
           {camera.streamCodec && (
             <span className="mono" style={{ textTransform: 'uppercase' }}>
               {camera.streamCodec}

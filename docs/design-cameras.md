@@ -3,8 +3,7 @@
 A dedicated **Cameras** page so cameras become first-class records instead of a
 hidden section inside an endpoint's edit dialog.
 
-> **Status:** phases 1-3 shipped; phase 4 partially shipped (test-all and the
-> assign quick action are still open). See "Implementation notes" at the end.
+> **Status:** all four phases shipped. See "Implementation notes" at the end.
 
 Labels: **must** = required for the feature to count as shipped, **should** =
 expected, **may** = follow-up.
@@ -256,7 +255,7 @@ ship dark behind the existing `CAMERA_ENABLED` switch.
 | `api/src/services/camera.ts` | cameraId-based CRUD/probe/snapshot plus `getForEndpoint`/`saveForEndpoint`/`removeForEndpoint`/`testForEndpoint`/`snapshotForEndpoint`/`rtspUriForEndpoint` adapters |
 | `api/src/services/camera-stream.ts` | tokens `{ c, t?, e?, x }`; `preview(cameraId)` mints a talk-free token; `revoke(cameraId)` drops tokens and the gateway stream; stream name `cam-<cameraId>` |
 | `api/src/lib/onvif.ts` | `discoverOnvifDevices` (WS-Discovery multicast) + `sweepOnvifSubnet` (unicast fallback) + `parseProbeMatches` |
-| `api/src/routes/index.ts` | `createCamerasRouter` at `/api/cameras`; endpoint camera routes are thin adapters |
+| `api/src/routes/index.ts` | `createCamerasRouter` at `/api/cameras` (incl. `PATCH /:id` for probe-free metadata); endpoint camera routes are thin adapters |
 | `web/src/pages/CamerasPage/` | fleet page: counts, search, status filter, card grid, preview dialog, discovery dialog |
 | `web/src/components/CameraForm/` | shared form used by the page and the endpoint dialog |
 | `web/src/components/CameraSettings/` | now a 12-line wrapper selecting the endpoint transport |
@@ -275,12 +274,15 @@ the WHEP proxy accepts it, and disabling the camera returns 401 "Camera session
 closed" on the next WHEP call (verified live). A disabled camera is rejected
 with 422 before a token is minted.
 
-**Deviation from the plan:** there is no "Test" / "Toggle" action button on the
-card. Test lives in the edit form (where the unsaved host/credentials are) and
-the enable toggle is the switch in that form, because testing or toggling from a
-card without the form would need another dialog round-trip. Preview is capped to
-online cameras. Delete asks for confirmation.
+**Cards are interactive.** Each card carries an enable switch and an
+endpoint-link select; both call `PATCH /api/cameras/:id` (`patchMeta`), which
+skips the ONVIF probe so a toggle takes ~0.1 s instead of the 5-16 s a probe
+costs. `PATCH` also revokes preview tokens when it disables a camera, and
+rejects a duplicate endpoint link with 422. "Test all" probes configured cameras
+sequentially with a `done/total` counter so the fleet is not hammered; single
+"Test" stays in the edit form where the unsaved host/credentials live. Preview is
+capped to online cameras and Delete asks for confirmation.
 
-**Not done (phase 4):** bulk "Test all", the assign-to-endpoint quick action from
-a card, and a card-level enable toggle. Status auto-refresh every 60 s while the
-page is visible is implemented.
+Status auto-refresh: every 60 s, and only while the page is visible. Card
+snapshots poll only while the card intersects the viewport (IntersectionObserver,
+5 s interval), so a long fleet does not keep every camera awake.

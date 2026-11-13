@@ -304,6 +304,42 @@ export class CameraService {
     return { ...toView(row as CameraRow), profiles };
   }
 
+  /**
+   * Metadata/enable changes that do not need an ONVIF probe.
+   *
+   * Save() re-probes the camera (seconds of latency), which is wrong for a card
+   * toggle or linking an endpoint — those must feel instant.
+   */
+  async patchMeta(
+    id: number,
+    patch: {
+      name?: string;
+      location?: string;
+      endpointId?: number | null;
+      enabled?: boolean;
+    },
+  ): Promise<CameraView> {
+    const existing = await prisma.camera.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "Camera not found");
+
+    const name = patch.name?.trim();
+    if (patch.name !== undefined && !name) throw new ApiError(422, "Name cannot be empty");
+    if (patch.endpointId !== undefined) {
+      await this.assertEndpointFree(patch.endpointId, id);
+    }
+
+    const row = await prisma.camera.update({
+      where: { id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(patch.location !== undefined ? { location: patch.location.trim() } : {}),
+        ...(patch.endpointId !== undefined ? { endpointId: patch.endpointId } : {}),
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      },
+    });
+    return toView(row as CameraRow);
+  }
+
   async remove(id: number): Promise<void> {
     const row = await prisma.camera.findUnique({ where: { id } });
     if (!row) throw new ApiError(404, "Camera not found");

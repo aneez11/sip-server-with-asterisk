@@ -1440,6 +1440,39 @@
   }
 }
 
+.camera-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.camera-assign {
+  max-width: 165px;
+  min-height: 24px;
+  padding: 1px 20px 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--mut);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mut) 50%),
+    linear-gradient(135deg, var(--mut) 50%, transparent 50%);
+  background-position:
+    calc(100% - 11px) calc(50% + 1px),
+    calc(100% - 7px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+
+  &:hover {
+    border-color: var(--acc);
+    color: var(--ink);
+  }
+}
+
 .camera-card-actions {
   display: flex;
   align-items: center;

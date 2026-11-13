@@ -321,6 +321,20 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    /** Metadata / link / enable only — no ONVIF probe. */
+    patch: (
+      id: number,
+      body: {
+        name?: string;
+        location?: string;
+        endpointId?: number | null;
+        enabled?: boolean;
+      },
+    ) =>
+      request<CameraView>(`/api/cameras/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
     save: (id: number, body: CameraConfigBody) =>
       request<CameraView>(`/api/cameras/${id}`, {
         method: "PUT",

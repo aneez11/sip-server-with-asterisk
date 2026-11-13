@@ -11,6 +11,7 @@ import {
   talkSchema,
   cameraConfigSchema,
   cameraCreateSchema,
+  cameraPatchSchema,
   cameraDiscoverAddSchema,
   cameraDiscoverSchema,
   cameraStartSchema,
@@ -540,6 +541,18 @@ export function createCamerasRouter(
       const saved = await camera.save(Number(req.params.id), body);
       // A disabled camera must not keep a live preview token around.
       if (!saved.enabled) await stream.revoke(saved.id);
+      res.json(saved);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /** Metadata, endpoint link and enable state — no ONVIF probe. */
+  router.patch("/:id", async (req, res, next) => {
+    try {
+      const body = cameraPatchSchema.parse(req.body ?? {});
+      const saved = await camera.patchMeta(Number(req.params.id), body);
+      if (saved.enabled === false) await stream.revoke(saved.id);
       res.json(saved);
     } catch (e) {
       next(e);
