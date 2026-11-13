@@ -6,7 +6,10 @@ Runs a full UI audit against the deployed console:
   -> broadcast -> live talk -> history.
 
 Usage:
-  py e2e_py/audit_console.py [--base-url http://127.0.0.1:3001] [--headed]
+  py e2e_py/audit_console.py [--base-url https://127.0.0.1:3443] [--headed]
+
+The deployed API redirects HTTP to its self-signed HTTPS origin; the browser
+context accepts that certificate (`ignore_https_errors`).
 
 Exit code 0 = all PASS, 1 = any FAIL. Screenshots on failure: e2e_py/_*.png
 Conventions (per Infinity BIZ v2 methodology): sync API, ASCII-only output,
@@ -44,7 +47,7 @@ def run(base_url: str, headed: bool):
     global passed, failed
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not headed)
-        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, ignore_https_errors=True)
         page.set_default_timeout(10000)
 
         # ---- 1. Login page -----------------------------------------------
