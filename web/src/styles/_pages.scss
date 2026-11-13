@@ -1,4 +1,4 @@
-﻿// Page-specific compositions ------------------------------------------------
+// Page-specific compositions ------------------------------------------------
 
 .target-grid {
   display: grid;
@@ -729,4 +729,17 @@
   > span {
     white-space: nowrap;
   }
+}
+
+.track-play {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
 }

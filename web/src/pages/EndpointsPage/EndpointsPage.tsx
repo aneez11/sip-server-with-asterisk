@@ -229,6 +229,7 @@ export const EndpointsPage = () => {
                   <Switch
                     checked={e.isActive}
                     onCheckedChange={(v) => void setEndpointActive(e.id, v)}
+                    aria-label={`${e.isActive ? "Deactivate" : "Activate"} ${e.label}`}
                   />
                 </td>
                 <td className="actions">

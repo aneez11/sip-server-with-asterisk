@@ -75,17 +75,6 @@
   }
 }
 
-.dialog-lede {
-  margin: 0 0 4px;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-}
-
 .dialog-content.dialog-wide {
   width: min(960px, 94vw);
 }

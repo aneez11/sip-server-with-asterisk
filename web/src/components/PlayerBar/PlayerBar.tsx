@@ -3,8 +3,10 @@ import { Music, Radio, X } from "lucide-react";
 import { useStore } from "@/store";
 import { Progress } from "@/components/Progress/Progress";
 
-const fmtDur = (s: number) =>
-  `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
+const fmtDur = (s: number) => {
+  const sec = Math.max(0, Math.round(s));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+};
 
 /** Global now-playing strip above the status bar. Hidden when idle. */
 export const PlayerBar = () => {

@@ -26,9 +26,9 @@ const fmtSize = (b: number) => {
 };
 const fmtDur = (s: number | null | undefined) => {
   if (!s || s <= 0) return "";
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}:${String(sec).padStart(2, "0")}`;
+  const sec = Math.round(s);
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(sec % 60).padStart(2, "0")}`;
 };
 
 type TargetKind =

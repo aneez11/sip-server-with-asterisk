@@ -2,7 +2,7 @@
 Infinity Echo - console audit with Python Playwright.
 
 Runs a full UI audit against the deployed console:
-  login -> sidebar/zones -> endpoints (status, add, duplicate error, password copy)
+  login -> icon rail/zones -> endpoints (status, add, duplicate error, password copy)
   -> broadcast -> live talk -> history.
 
 Usage:
@@ -58,12 +58,12 @@ def run(base_url: str, headed: bool):
             browser.close()
             return 1
 
-        page.get_by_placeholder("Username").fill("admin")
-        page.get_by_placeholder("Password").fill("admin12345")
+        page.get_by_label("Username").fill("admin")
+        page.get_by_label("Password").fill("admin12345")
         page.get_by_role("button", name="Sign in").click()
 
         try:
-            expect(page.get_by_role("tab", name="Broadcast")).to_be_visible(timeout=8000)
+            expect(page.get_by_title("Broadcast", exact=True)).to_be_visible(timeout=8000)
             report("login succeeds, console renders", True)
         except Exception as e:
             report("login succeeds, console renders", False, str(e)[:120])
@@ -72,12 +72,12 @@ def run(base_url: str, headed: bool):
             return 1
         shot(page, "02-console")
 
-        # ---- 2. Topbar status + sidebar -----------------------------------
+        # ---- 2. Topbar status + icon rail ----------------------------------
         try:
-            expect(page.get_by_text("Zones & endpoints")).to_be_visible()
-            report("sidebar renders", True)
+            expect(page.get_by_title("Zones", exact=True)).to_be_visible()
+            report("icon rail renders", True)
         except Exception as e:
-            report("sidebar renders", False, str(e)[:120])
+            report("icon rail renders", False, str(e)[:120])
 
         topbar = page.locator("header").first
         topbar_text = topbar.inner_text()
@@ -85,7 +85,7 @@ def run(base_url: str, headed: bool):
         report("topbar shows endpoint count", has_count, topbar_text.strip().replace("\n", " ")[:80])
 
         # ---- 3. Endpoints tab (table UI) ----------------------------------
-        page.get_by_role("tab", name="Endpoints").click()
+        page.get_by_title("Endpoints", exact=True).click()
         try:
             expect(page.get_by_role("button", name="Add endpoint")).to_be_visible(timeout=5000)
             report("endpoints page renders", True)
@@ -151,7 +151,7 @@ def run(base_url: str, headed: bool):
         report("test endpoint deleted", "Audit Test" not in body_text)
 
         # ---- 6. Zones manager ----------------------------------------------
-        page.get_by_role("tab", name="Zones").click()
+        page.get_by_title("Zones", exact=True).click()
         try:
             expect(page.get_by_role("button", name="Add zone")).to_be_visible(timeout=5000)
             report("zones page renders", True)
@@ -167,9 +167,9 @@ def run(base_url: str, headed: bool):
         shot(page, "04-zones")
 
         # ---- 7. Broadcast tab ----------------------------------------------
-        page.get_by_role("tab", name="Broadcast").click()
+        page.get_by_title("Broadcast", exact=True).click()
         try:
-            expect(page.get_by_role("button", name="Upload WAV")).to_be_visible(timeout=5000)
+            expect(page.get_by_role("button", name="Upload", exact=True)).to_be_visible(timeout=5000)
             report("broadcast page renders", True)
         except Exception as e:
             report("broadcast page renders", False, str(e)[:120])
@@ -179,14 +179,14 @@ def run(base_url: str, headed: bool):
         shot(page, "05-broadcast")
 
         # cleanup: delete the audit zone
-        page.get_by_role("tab", name="Zones").click()
-        row = page.locator("main").get_by_text("Audit Zone").locator("xpath=ancestor::tr").first
+        page.get_by_title("Zones", exact=True).click()
+        row = page.locator("main .grid-cards .card", has_text="Audit Zone").first
         row.locator("button[title=Delete]").click()
         page.wait_for_timeout(1200)
         report("zone deleted", "Audit Zone" not in page.locator("main").inner_text())
 
         # ---- 8. Live talk tab ----------------------------------------------
-        page.get_by_role("tab", name="Live talk").click()
+        page.get_by_title("Live talk", exact=True).click()
         try:
             expect(page.get_by_role("button", name="Start talk")).to_be_visible(timeout=5000)
             report("live talk page renders", True)
@@ -195,7 +195,7 @@ def run(base_url: str, headed: bool):
         shot(page, "06-live-talk")
 
         # ---- 9. History tab ------------------------------------------------
-        page.get_by_role("tab", name="History").click()
+        page.get_by_title("History", exact=True).click()
         try:
             expect(page.get_by_text("recent broadcast")).to_be_visible(timeout=5000)
             report("history page renders", True)

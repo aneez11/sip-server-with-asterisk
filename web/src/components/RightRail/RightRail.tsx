@@ -299,7 +299,7 @@ export const RightRail = () => {
           </strong>
         </div>
         <div className="meta-row">
-          <span>Zones selected</span>
+          <span>Music zones</span>
           <strong>{selectedZoneIds.size}</strong>
         </div>
       </div>

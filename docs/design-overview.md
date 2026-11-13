@@ -79,5 +79,6 @@ All `/api/*` routes except login require the session. No registration.
 
 ## Theme
 
-Web UI uses the UNV IPSpeaker theme verbatim (`tailwind.config.js`, `main.scss`),
-shell grid 260/1fr/300 × 56/1fr/32, tabs: Broadcast / Live talk / Endpoints / History.
+Web UI uses the shared SCSS design system (`web/src/styles/`), shell grid
+80/1fr/320 × 56/1fr/auto/44, icon rail: Broadcast / Media / Monitor / Live talk
+/ Music / Endpoints / Zones / PA groups / History.

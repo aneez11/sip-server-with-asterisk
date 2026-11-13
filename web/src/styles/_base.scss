@@ -85,18 +85,6 @@ a {
   font-family: var(--font-mono);
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 .spacer {
   flex: 1;
 }
@@ -123,10 +111,6 @@ a {
   font-size: 12px;
   line-height: 1.5;
   margin: 8px 0 0;
-}
-
-.error-note {
-  color: var(--bad);
 }
 
 kbd {

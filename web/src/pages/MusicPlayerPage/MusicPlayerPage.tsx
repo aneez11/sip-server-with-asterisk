@@ -166,24 +166,28 @@ export const MusicPlayerPage = () => {
             {music.map((m, i) => {
               const isCurrent = musicPlaying && current?.id === m.id;
               return (
-                <div key={m.id} className={`track-row${isCurrent ? ' on' : ''}`} onClick={() => void playMusic(m.id, targetedIds)} title="Play this track">
-                  <span className="track-index">
-                    {isCurrent ? <Radio size={13} className="animate-pulse" /> : i + 1}
-                  </span>
-                  <div className="track-main">
-                    <b>{m.name}</b>
-                    <small>
-                      {fmtSize(m.fileSize)}
-                      {isCurrent ? <span className="ok-text"> · playing</span> : null}
-                    </small>
-                  </div>
+                <div key={m.id} className={`track-row${isCurrent ? ' on' : ''}`}>
+                  <button
+                    type="button"
+                    className="track-play"
+                    onClick={() => void playMusic(m.id, targetedIds)}
+                    title="Play this track"
+                  >
+                    <span className="track-index">
+                      {isCurrent ? <Radio size={13} className="animate-pulse" /> : i + 1}
+                    </span>
+                    <div className="track-main">
+                      <b>{m.name}</b>
+                      <small>
+                        {fmtSize(m.fileSize)}
+                        {isCurrent ? <span className="ok-text"> · playing</span> : null}
+                      </small>
+                    </div>
+                  </button>
                   <button
                     type="button"
                     className="icon-link danger"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void removeMusic(m.id);
-                    }}
+                    onClick={() => void removeMusic(m.id)}
                     title="Remove from playlist"
                   >
                     <Trash2 size={13} />

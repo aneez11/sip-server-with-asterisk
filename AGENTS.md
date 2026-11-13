@@ -1,8 +1,8 @@
 # Infinity Echo — Workspace Guide
 
 Monorepo for the Institute SIP broadcast paging console — a full Node.js + TypeScript
-rewrite of the v1 Laravel/Asterisk system. The UI theme is ported **verbatim** from the
-UNV IPSpeaker project.
+rewrite of the v1 Laravel/Asterisk system. The UI follows the shared SCSS design
+system in `web/src/styles/` (ported from the Cafe Management reference console).
 
 ```
 Infinity Echo/
