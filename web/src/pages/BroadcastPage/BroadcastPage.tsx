@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   Headphones,
   Layers,
+  Library,
   Mic,
   Phone,
   Play,
@@ -9,7 +10,6 @@ import {
   Search,
   Square,
   Trash2,
-  Upload,
   Volume2,
 } from "lucide-react";
 import { useStore } from "@/store";
@@ -39,17 +39,17 @@ export const BroadcastPage = () => {
   const busy = useStore((s) => s.busy);
   const playAnnouncement = useStore((s) => s.playAnnouncement);
   const playAdhoc = useStore((s) => s.playAdhoc);
-  const uploadAnnouncement = useStore((s) => s.uploadAnnouncement);
   const removeAnnouncement = useStore((s) => s.removeAnnouncement);
   const recordingAnnouncement = useStore((s) => s.recordingAnnouncement);
   const recordAnnouncement = useStore((s) => s.recordAnnouncement);
   const cancelAnnouncementRecording = useStore(
     (s) => s.cancelAnnouncementRecording,
   );
-  const fileRef = useRef<HTMLInputElement>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [targets, setTargets] = useState<TargetKind[]>([]);
   const [filter, setFilter] = useState("");
+  const setActiveTab = useStore((s) => s.setActiveTab);
+  const sortedAnnouncements = [...announcements].sort((a, b) => a.name.localeCompare(b.name));
 
   const registeredIds = endpoints
     .filter((e) => e.isActive && e.registered)
@@ -98,7 +98,7 @@ export const BroadcastPage = () => {
     <div className="page-scroll">
       <ScreenHeader
         title="Broadcast"
-        subtitle={`${announcements.length} announcement${announcements.length === 1 ? "" : "s"} · pick endpoints, zones or PA groups, then play`}
+        subtitle={`${sortedAnnouncements.length} announcement${sortedAnnouncements.length === 1 ? "" : "s"} · pick endpoints, zones or PA groups, then play`}
         actions={
           <>
             {recordingAnnouncement ? (
@@ -114,24 +114,12 @@ export const BroadcastPage = () => {
                 <Mic size={13} /> Record
               </Button>
             )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".wav,.mp3,audio/wav,audio/mpeg"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void uploadAnnouncement(f);
-                e.target.value = "";
-              }}
-            />
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fileRef.current?.click()}
-              disabled={busy}
+              onClick={() => setActiveTab("media")}
             >
-              <Upload size={13} /> Upload
+              <Library size={13} /> Media library
             </Button>
           </>
         }
@@ -223,7 +211,7 @@ export const BroadcastPage = () => {
       </div>
 
       <div className="grid-cards">
-        {announcements.map((a) => (
+        {sortedAnnouncements.map((a) => (
           <Card key={a.id} className="announce-card">
             <div className="inline" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -282,9 +270,9 @@ export const BroadcastPage = () => {
           </Card>
         ))}
 
-        {announcements.length === 0 && (
+        {sortedAnnouncements.length === 0 && (
           <div className="state state-empty" style={{ gridColumn: "1 / -1" }}>
-            No announcements yet — upload a WAV file or record one.
+            No broadcast media yet — add it in the Media library or record one.
           </div>
         )}
       </div>

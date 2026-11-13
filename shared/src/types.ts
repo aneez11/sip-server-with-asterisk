@@ -92,6 +92,8 @@ export interface Announcement {
   duration?: number | null;
   flash: boolean;
   music?: boolean;
+  /** Available to broadcast announcements (defaults to legacy: !music). */
+  broadcast?: boolean;
   createdAt?: string;
 }
 
@@ -104,6 +106,7 @@ export interface Music {
   fileSize: number;
   duration?: number | null;
   createdAt?: string;
+  broadcast?: boolean;
 }
 
 export interface OverviewResponse {
@@ -112,6 +115,8 @@ export interface OverviewResponse {
   recentLogs: BroadcastLog[];
   announcements: Announcement[];
   music: Music[];
+  /** Every non-flash media item with its broadcast/music availability. */
+  media: Announcement[];
   profiles: AutoAnswerProfile[];
   /** Zone ids with a currently active (pending) broadcast. */
   busyZoneIds: number[];

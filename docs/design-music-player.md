@@ -10,9 +10,9 @@ a playlist-player UX with auto-advance — the practical equivalent for PA music
 
 ## Flow
 
-1. Upload a WAV track → stored like an announcement, but flagged `music = true`
-   (same `Announcement` table; excluded from the announcement library and the
-   status overview splits it into a separate `music` array).
+1. Upload once in the Media library; each item carries `broadcast` and `music`
+   availability flags (same `Announcement` table). The legacy `/api/music`
+   upload remains and creates a music-only item.
 2. Operator selects zones to stream to (inline chips; the selection lives in the
    store so it persists across tabs).
 3. **Play** → `POST /api/music/:id/play` → originates `Local/9001@music` with
@@ -25,6 +25,17 @@ a playlist-player UX with auto-advance — the practical equivalent for PA music
 5. **Stop** stops the auto-advance after the current track; **next/prev** restart
    at the chosen track. Elapsed/progress is computed from the broadcast start time
    and the normalized file size (8 kHz mono 16-bit → 16000 B/s).
+
+## Media availability
+
+- `/api/media` is the single library: `POST` uploads with `broadcast`/`music`
+  flags, `PATCH /:id` toggles them, `DELETE /:id` removes the item.
+- `/api/status/overview` returns `media` (all non-flash items) plus filtered
+  `announcements` (broadcast-available) and `music` (music-available) arrays.
+- Playback rejects an item that is not available for the requested surface, so a
+  hidden track cannot be forced through the broadcast endpoint (or vice versa).
+- Legacy rows with `broadcast = NULL` keep their old behavior: `broadcast`
+  defaults to `!music`.
 
 ## Why the beep is gone
 

@@ -23,6 +23,8 @@ interface StoreState {
   zones: Zone[];
   announcements: Announcement[];
   music: Music[];
+  /** Unified media library with broadcast/music availability. */
+  media: Announcement[];
   profiles: AutoAnswerProfile[];
   paGroups: PaGroup[];
   recentLogs: BroadcastLog[];
@@ -83,6 +85,16 @@ interface StoreState {
   stopBroadcast: (logId?: number) => Promise<void>;
   uploadAnnouncement: (file: File, name?: string) => Promise<void>;
   removeAnnouncement: (id: number) => Promise<void>;
+  uploadMedia: (
+    file: File,
+    flags: { broadcast: boolean; music: boolean },
+    onProgress?: (fraction: number) => void,
+  ) => Promise<void>;
+  updateMediaAvailability: (
+    id: number,
+    flags: { broadcast?: boolean; music?: boolean; name?: string },
+  ) => Promise<void>;
+  removeMedia: (id: number) => Promise<void>;
 
   uploadMusic: (file: File, name?: string) => Promise<void>;
   removeMusic: (id: number) => Promise<void>;
@@ -177,6 +189,7 @@ export const useStore = create<StoreState>((set, get) => {
       recentLogs: data.recentLogs,
       announcements: data.announcements,
       music: data.music ?? [],
+      media: data.media ?? [],
       profiles: data.profiles ?? [],
       busyZoneIds: new Set(data.busyZoneIds ?? []),
       amiConnected: data.amiConnected ?? true,
@@ -215,6 +228,7 @@ export const useStore = create<StoreState>((set, get) => {
     zones: [],
     announcements: [],
     music: [],
+    media: [],
     profiles: [],
     paGroups: [],
     recentLogs: [],
@@ -395,10 +409,41 @@ export const useStore = create<StoreState>((set, get) => {
         addToast((e as Error).message);
       }
     },
+    uploadMedia: async (file, flags, onProgress) => {
+      try {
+        await api.media.uploadWithProgress(
+          file,
+          flags,
+          onProgress ?? (() => undefined),
+        );
+        await get().refresh();
+        addToast("Media uploaded", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    updateMediaAvailability: async (id, flags) => {
+      try {
+        await api.media.update(id, flags);
+        await get().refresh();
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    removeMedia: async (id) => {
+      try {
+        await api.media.remove(id);
+        if (get().currentMusicId === id) get().stopMusic();
+        await get().refresh();
+        addToast("Media removed", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
     uploadAnnouncement: async (file, name) => {
       try {
-        const a = await api.announcements.upload(file, name);
-        set((s) => ({ announcements: [...s.announcements, a] }));
+        await api.announcements.upload(file, name);
+        await get().refresh();
         addToast("Announcement uploaded", "success");
       } catch (e) {
         addToast((e as Error).message);
@@ -437,11 +482,11 @@ export const useStore = create<StoreState>((set, get) => {
             }
             const fileName = `recording-${Date.now()}.wav`;
             const file = new File([wav], fileName, { type: "audio/wav" });
-            const a = await api.announcements.upload(
+            await api.announcements.upload(
               file,
               name ?? `Recording ${new Date().toLocaleTimeString()}`,
             );
-            set((s) => ({ announcements: [...s.announcements, a] }));
+            await get().refresh();
             addToast("Recording uploaded", "success");
           } catch (e) {
             addToast((e as Error).message);
@@ -473,9 +518,7 @@ export const useStore = create<StoreState>((set, get) => {
     removeAnnouncement: async (id) => {
       try {
         await api.announcements.remove(id);
-        set((s) => ({
-          announcements: s.announcements.filter((a) => a.id !== id),
-        }));
+        await get().refresh();
         addToast("Announcement removed", "success");
       } catch (e) {
         addToast((e as Error).message);
@@ -564,8 +607,8 @@ export const useStore = create<StoreState>((set, get) => {
 
     uploadMusic: async (file, name) => {
       try {
-        const m = await api.music.upload(file, name);
-        set((s) => ({ music: [...s.music, m] }));
+        await api.music.upload(file, name);
+        await get().refresh();
         addToast("Music uploaded", "success");
       } catch (e) {
         addToast((e as Error).message);
@@ -574,8 +617,8 @@ export const useStore = create<StoreState>((set, get) => {
     removeMusic: async (id) => {
       try {
         await api.music.remove(id);
-        set((s) => ({ music: s.music.filter((m) => m.id !== id) }));
         if (get().currentMusicId === id) get().stopMusic();
+        await get().refresh();
         addToast("Music removed", "success");
       } catch (e) {
         addToast((e as Error).message);
@@ -670,7 +713,13 @@ export const useStore = create<StoreState>((set, get) => {
           ...d,
           type: d.type as "phone" | "speaker",
         });
-        await get().refresh();
+        set((s) => ({
+          endpoints: [
+            ...s.endpoints.filter((e) => e.id !== created.id),
+            created,
+          ],
+        }));
+        void get().refresh();
         addToast(`Endpoint ${created.extension} added`, "success");
         return created;
       } catch (e) {

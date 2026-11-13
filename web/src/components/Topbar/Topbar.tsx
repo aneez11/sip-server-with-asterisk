@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   Clock3,
   LogOut,
-  MonitorSpeaker,
   Moon,
   Radio,
   Sun,
@@ -37,11 +36,12 @@ export const Topbar = () => {
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true">
-          <MonitorSpeaker size={18} />
+          <img className="brand-mark-on-light" src="/logo-mark-dark.svg" alt="" />
+          <img className="brand-mark-on-dark" src="/logo-mark.svg" alt="" />
         </span>
         <span className="brand-text">
-          <b>Paging console</b>
-          <small className="hide-lg">Infinity Echo · Institute SIP PA</small>
+          <b>Infinity Echo</b>
+          <small className="hide-lg">Paging console · Institute SIP PA</small>
         </span>
       </div>
 

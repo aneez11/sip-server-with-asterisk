@@ -1,17 +1,18 @@
 :root {
-  --bg: #eef1ee;
-  --bg-soft: #e5e9e6;
+  --bg: #f2f4f3;
+  --bg-soft: #e6ebe8;
   --pan: #ffffff;
-  --ink: #16222c;
-  --mut: #5d6b75;
-  --line: #d9dfdb;
+  --ink: #151719;
+  --mut: #5a6661;
+  --line: #d6ded9;
   --brand: #1f7a67;
   --brand-dark: #4cc2a7;
   --brand-ink: #ffffff;
   --brand-ink-dark: #0b201b;
-  --brand-deep: #0f4a40;
+  --brand-deep: #0b2f29;
   --acc: var(--brand);
   --acc-ink: var(--brand-ink);
+  --acc-text: #1f7a67;
   --acc2: color-mix(in srgb, var(--brand) 12%, var(--pan));
   --warn: #b7791f;
   --warn2: #fbf0d9;
@@ -19,7 +20,7 @@
   --bad2: #fae3e0;
   --ok: #1f7a67;
   --ok2: #e3f2ee;
-  --shadow: 0 10px 30px rgba(22, 34, 44, 0.08);
+  --shadow: 0 10px 30px rgba(21, 23, 25, 0.09);
   --font-head: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
@@ -27,14 +28,15 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #0f1820;
-  --bg-soft: #131f28;
-  --pan: #17232d;
-  --ink: #e6edf0;
-  --mut: #8fa0aa;
-  --line: #26343f;
+  --bg: #101514;
+  --bg-soft: #17201e;
+  --pan: #17201e;
+  --ink: #edf2f0;
+  --mut: #93a39e;
+  --line: #26332f;
   --acc: var(--brand-dark);
   --acc-ink: var(--brand-ink-dark);
+  --acc-text: #5fd0b4;
   --acc2: color-mix(in srgb, var(--brand-dark) 18%, var(--pan));
   --warn: #e3b04b;
   --warn2: #3a2f16;
@@ -42,20 +44,21 @@
   --bad2: #3b1d1b;
   --ok: #4cc2a7;
   --ok2: #15332f;
-  --shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+  --shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg: #0f1820;
-    --bg-soft: #131f28;
-    --pan: #17232d;
-    --ink: #e6edf0;
-    --mut: #8fa0aa;
-    --line: #26343f;
+    --bg: #101514;
+    --bg-soft: #17201e;
+    --pan: #17201e;
+    --ink: #edf2f0;
+    --mut: #93a39e;
+    --line: #26332f;
     --acc: var(--brand-dark);
     --acc-ink: var(--brand-ink-dark);
+    --acc-text: #5fd0b4;
     --acc2: color-mix(in srgb, var(--brand-dark) 18%, var(--pan));
     --warn: #e3b04b;
     --warn2: #3a2f16;
@@ -63,7 +66,7 @@
     --bad2: #3b1d1b;
     --ok: #4cc2a7;
     --ok2: #15332f;
-    --shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+    --shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
     color-scheme: dark;
   }
 }

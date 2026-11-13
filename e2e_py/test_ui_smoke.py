@@ -100,7 +100,7 @@ def main() -> int:
             # 2. Music zone selection is store-backed and survives a tab switch.
             page.get_by_title("Music", exact=True).click()
             page.wait_for_timeout(300)
-            page.locator(".zone-chip").filter(has_text="All Staff").click()
+            page.locator(".zone-option").filter(has_text="All Staff").click()
             page.wait_for_timeout(300)
             page.get_by_title("Broadcast", exact=True).click()
             page.wait_for_timeout(300)

@@ -664,8 +664,7 @@ export function createStatusRouter(
         endpointList,
         zones,
         logs,
-        announcements,
-        musicList,
+        mediaRows,
         pendingLogs,
         profiles,
       ] = await Promise.all([
@@ -676,11 +675,7 @@ export function createStatusRouter(
         }),
         prisma.broadcastLog.findMany({ orderBy: { id: "desc" }, take: 10 }),
         prisma.announcement.findMany({
-          where: { flash: false, music: false },
-          orderBy: { name: "asc" },
-        }),
-        prisma.announcement.findMany({
-          where: { music: true },
+          where: { flash: false },
           orderBy: { name: "asc" },
         }),
         prisma.broadcastLog.findMany({
@@ -689,6 +684,24 @@ export function createStatusRouter(
         }),
         prisma.autoAnswerProfile.findMany({ orderBy: { name: "asc" } }),
       ]);
+
+      const serializeMedia = (a: (typeof mediaRows)[number]) => ({
+        id: a.id,
+        name: a.name,
+        filename: a.filename,
+        originalName: a.originalName,
+        fileSize: a.fileSize,
+        duration: a.duration ?? null,
+        flash: a.flash,
+        music: a.music ?? false,
+        broadcast: a.broadcast ?? !(a.music ?? false),
+      });
+      const announcements = mediaRows
+        .filter((a) => a.broadcast ?? !a.music)
+        .map(serializeMedia);
+      const musicList = mediaRows
+        .filter((a) => a.music)
+        .map(serializeMedia);
 
       const busyZoneIds = [
         ...new Set(
@@ -723,26 +736,9 @@ export function createStatusRouter(
           startedAt: l.startedAt?.toISOString() ?? null,
           endedAt: l.endedAt?.toISOString() ?? null,
         })),
-        announcements: announcements.map((a) => ({
-          id: a.id,
-          name: a.name,
-          filename: a.filename,
-          originalName: a.originalName,
-          fileSize: a.fileSize,
-          duration: a.duration ?? null,
-          flash: a.flash,
-          music: a.music,
-        })),
-        music: musicList.map((a) => ({
-          id: a.id,
-          name: a.name,
-          filename: a.filename,
-          originalName: a.originalName,
-          fileSize: a.fileSize,
-          duration: a.duration ?? null,
-          flash: a.flash,
-          music: true,
-        })),
+        announcements,
+        music: musicList,
+        media: mediaRows.map(serializeMedia),
         profiles: profiles.map((p) => ({
           id: p.id,
           name: p.name,
@@ -915,6 +911,60 @@ export function createMediaRouter(announcements: AnnouncementService): Router {
   router.get("/", async (_req, res, next) => {
     try {
       res.json(await announcements.listAll());
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.post("/", upload.single("file"), async (req, res, next) => {
+    try {
+      if (!req.file) throw new ApiError(422, "file is required");
+      const name = (req.body?.name as string | undefined)?.trim() || undefined;
+      const music = req.body?.music === "true" || req.body?.music === true;
+      const broadcast =
+        req.body?.broadcast === undefined
+          ? !music
+          : req.body.broadcast === "true" || req.body.broadcast === true;
+      res
+        .status(201)
+        .json(await announcements.upload(req.file, name, { music, broadcast }));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.patch("/:id", async (req, res, next) => {
+    try {
+      const body = (req.body ?? {}) as {
+        broadcast?: unknown;
+        music?: unknown;
+        name?: unknown;
+      };
+      if (
+        (body.broadcast !== undefined && typeof body.broadcast !== "boolean") ||
+        (body.music !== undefined && typeof body.music !== "boolean")
+      ) {
+        throw new ApiError(422, "broadcast and music must be booleans");
+      }
+      if (body.name !== undefined && typeof body.name !== "string") {
+        throw new ApiError(422, "name must be a string");
+      }
+      res.json(
+        await announcements.updateAvailability(Number(req.params.id), {
+          broadcast: body.broadcast as boolean | undefined,
+          music: body.music as boolean | undefined,
+          name: body.name as string | undefined,
+        }),
+      );
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  router.delete("/:id", async (req, res, next) => {
+    try {
+      await announcements.remove(Number(req.params.id));
+      res.status(204).end();
     } catch (e) {
       next(e);
     }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Check, MonitorSpeaker, Moon, Sun } from 'lucide-react';
+import { ArrowRight, Check, Moon, Sun } from 'lucide-react';
 import { api } from '@/lib/api/client';
 import { useTheme } from '@/lib/theme';
 
@@ -28,10 +28,7 @@ export const LoginPage = ({ onLogin }: { onLogin: () => void }) => {
     <div className="login">
       <section className="login-art" aria-label="Infinity Echo paging console">
         <div className="login-brand">
-          <span className="brand-mark" aria-hidden="true">
-            <MonitorSpeaker size={20} />
-          </span>
-          <b>Infinity Echo</b>
+          <img className="login-logo" src="/logo-light.svg" alt="Infinity Echo" />
           <small>Institute SIP paging · LAN only</small>
         </div>
         <div className="login-pitch">

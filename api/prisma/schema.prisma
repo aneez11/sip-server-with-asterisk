@@ -118,6 +118,7 @@ model Announcement {
   duration     Float?   // seconds of the normalized WAV (for progress bars)
   flash        Boolean  @default(false)
   music        Boolean  @default(false)
+  broadcast    Boolean? // null = legacy row: !music
   createdAt    DateTime @default(now())
   paGroupsAsStart PaGroup[] @relation("PaStart")
   paGroupsAsEnd   PaGroup[] @relation("PaEnd")

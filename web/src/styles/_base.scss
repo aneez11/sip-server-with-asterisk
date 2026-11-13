@@ -69,7 +69,7 @@ button {
 }
 
 a {
-  color: var(--acc);
+  color: var(--acc-text);
 }
 
 :where(button, a, input, select, textarea, [tabindex]):focus-visible {

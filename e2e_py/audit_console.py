@@ -172,7 +172,7 @@ def run(base_url: str, headed: bool):
         # ---- 7. Broadcast tab ----------------------------------------------
         page.get_by_title("Broadcast", exact=True).click()
         try:
-            expect(page.get_by_role("button", name="Upload", exact=True)).to_be_visible(timeout=5000)
+            expect(page.get_by_role("button", name="Media library", exact=True)).to_be_visible(timeout=5000)
             report("broadcast page renders", True)
         except Exception as e:
             report("broadcast page renders", False, str(e)[:120])

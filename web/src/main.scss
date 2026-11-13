@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    --background: 120 11% 94%;
-    --foreground: 207 33% 13%;
+    --background: 150 8% 95%;
+    --foreground: 210 9% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 207 33% 13%;
+    --card-foreground: 210 9% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 207 33% 13%;
+    --popover-foreground: 210 9% 9%;
     --primary: 167 60% 30%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 130 8% 91%;
-    --secondary-foreground: 207 33% 13%;
-    --muted: 130 8% 91%;
-    --muted-foreground: 205 11% 41%;
-    --accent: 130 8% 91%;
-    --accent-foreground: 207 33% 13%;
+    --secondary: 144 11% 91%;
+    --secondary-foreground: 210 9% 9%;
+    --muted: 144 11% 91%;
+    --muted-foreground: 155 6% 38%;
+    --accent: 144 11% 91%;
+    --accent-foreground: 210 9% 9%;
     --destructive: 4 59% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 140 9% 86%;
-    --input: 140 9% 86%;
+    --border: 143 11% 86%;
+    --input: 143 11% 86%;
     --ring: 167 60% 30%;
     --radius: 0.625rem;
 
@@ -34,24 +34,24 @@
   }
 
   :root[data-theme='dark'] {
-    --background: 208 36% 9%;
-    --foreground: 195 25% 92%;
-    --card: 203 32% 13%;
-    --card-foreground: 195 25% 92%;
-    --popover: 203 32% 13%;
-    --popover-foreground: 195 25% 92%;
+    --background: 168 14% 7%;
+    --foreground: 156 16% 94%;
+    --card: 167 16% 11%;
+    --card-foreground: 156 16% 94%;
+    --popover: 167 16% 11%;
+    --popover-foreground: 156 16% 94%;
     --primary: 167 50% 53%;
     --primary-foreground: 167 49% 8%;
-    --secondary: 206 36% 12%;
-    --secondary-foreground: 195 25% 92%;
-    --muted: 206 36% 12%;
-    --muted-foreground: 202 14% 61%;
-    --accent: 206 36% 12%;
-    --accent-foreground: 195 25% 92%;
+    --secondary: 160 16% 9%;
+    --secondary-foreground: 156 16% 94%;
+    --muted: 160 16% 9%;
+    --muted-foreground: 161 8% 61%;
+    --accent: 160 16% 9%;
+    --accent-foreground: 156 16% 94%;
     --destructive: 5 79% 69%;
     --destructive-foreground: 167 49% 8%;
-    --border: 204 25% 20%;
-    --input: 204 25% 20%;
+    --border: 161 15% 18%;
+    --input: 161 15% 18%;
     --ring: 167 50% 53%;
 
     --amber: 41 73% 59%;

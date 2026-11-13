@@ -59,7 +59,7 @@ const PasswordRow = ({ password }: { password: string }) => {
   return (
     <div className="inline" style={{ gap: 6, fontSize: 12 }}>
       <span className="muted">SIP password:</span>
-      <code style={{ font: "11.5px var(--font-mono)", color: "var(--acc)" }}>{password}</code>
+      <code style={{ font: "11.5px var(--font-mono)", color: "var(--acc-text)" }}>{password}</code>
       <button
         type="button"
         className="icon-link"

@@ -33,6 +33,7 @@ export interface AnnouncementView {
   duration: number | null;
   flash: boolean;
   music: boolean;
+  broadcast: boolean;
 }
 
 export class AnnouncementService {
@@ -75,38 +76,51 @@ export class AnnouncementService {
           fileSize,
           duration,
           music: false,
+          broadcast: true,
         },
       });
     }
   }
 
   async list() {
-    return prisma.announcement.findMany({
-      where: { flash: false, music: false },
+    const rows = await prisma.announcement.findMany({
+      where: {
+        flash: false,
+        OR: [{ broadcast: true }, { broadcast: null, music: false }],
+      },
       orderBy: { name: "asc" },
     });
+    return rows.map((a) => this.serialize(a));
   }
 
   /** All media (broadcast announcements + music tracks) for the Media Manager. */
   async listAll() {
-    return prisma.announcement.findMany({
+    const rows = await prisma.announcement.findMany({
       where: { flash: false },
-      orderBy: [{ music: "asc" }, { name: "asc" }],
+      orderBy: { name: "asc" },
     });
+    return rows.map((a) => ({
+      ...a,
+      music: a.music ?? false,
+      broadcast: a.broadcast ?? !(a.music ?? false),
+    }));
   }
 
   async listMusic() {
-    return prisma.announcement.findMany({
+    const rows = await prisma.announcement.findMany({
       where: { music: true },
       orderBy: { name: "asc" },
     });
+    return rows.map((a) => this.serialize(a));
   }
 
   async upload(
     file: MulterFile,
     name?: string,
-    music = false,
+    opts: { music?: boolean; broadcast?: boolean } = {},
   ): Promise<AnnouncementView> {
+    const music = opts.music ?? false;
+    const broadcast = opts.broadcast ?? !music;
     const stored = await this.persistAudio(file, music ? "music-" : "");
     const a = await prisma.announcement.create({
       data: {
@@ -117,6 +131,7 @@ export class AnnouncementService {
         fileSize: stored.fileSize,
         duration: stored.duration,
         music,
+        broadcast,
       },
     });
     return this.serialize(a);
@@ -126,7 +141,43 @@ export class AnnouncementService {
     file: MulterFile,
     name?: string,
   ): Promise<AnnouncementView> {
-    return this.upload(file, name, true);
+    return this.upload(file, name, { music: true, broadcast: false });
+  }
+
+  /** Toggle where an existing media item is available. */
+  async updateAvailability(
+    id: number,
+    flags: { broadcast?: boolean; music?: boolean; name?: string },
+  ): Promise<AnnouncementView> {
+    const name = flags.name?.trim();
+    if (
+      flags.broadcast === undefined &&
+      flags.music === undefined &&
+      flags.name === undefined
+    ) {
+      throw new ApiError(422, "broadcast, music or name is required");
+    }
+    if (flags.name !== undefined && !name) {
+      throw new ApiError(422, "name cannot be empty");
+    }
+    if (name && name.length > 120) {
+      throw new ApiError(422, "name is too long");
+    }
+    const a = await prisma.announcement
+      .update({
+        where: { id },
+        data: {
+          ...(name ? { name } : {}),
+          ...(flags.broadcast !== undefined
+            ? { broadcast: flags.broadcast }
+            : {}),
+          ...(flags.music !== undefined ? { music: flags.music } : {}),
+        },
+      })
+      .catch(() => {
+        throw new ApiError(404, "Not found");
+      });
+    return this.serialize(a);
   }
 
   async remove(id: number): Promise<void> {
@@ -159,6 +210,17 @@ export class AnnouncementService {
   ): Promise<{ id: number }> {
     const a = await prisma.announcement.findUnique({ where: { id } });
     if (!a) throw new ApiError(404, "Announcement not found");
+
+    const forMusic = opts.music === true;
+    const available = forMusic ? a.music : (a.broadcast ?? !a.music);
+    if (!available) {
+      throw new ApiError(
+        422,
+        forMusic
+          ? "This media is not available for the music player"
+          : "This media is not available for broadcast",
+      );
+    }
 
     const endpoints = await onlineEndpoints(
       this.ami,
@@ -252,6 +314,7 @@ export class AnnouncementService {
         originalFile: stored.originalFile,
         fileSize: stored.fileSize,
         flash: true,
+        broadcast: true,
       },
     });
 
@@ -336,6 +399,7 @@ export class AnnouncementService {
       duration: a.duration ?? null,
       flash: a.flash,
       music: a.music ?? false,
+      broadcast: a.broadcast ?? !(a.music ?? false),
     };
   }
 }

@@ -13,15 +13,16 @@
   justify-content: space-between;
   gap: 28px;
   padding: 36px 44px;
-  color: #f2fbf8;
+  color: #fbfbfb;
   background:
-    radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.18), transparent 42%),
-    radial-gradient(circle at 85% 90%, rgba(255, 255, 255, 0.1), transparent 40%),
+    radial-gradient(circle at 82% 18%, rgba(76, 194, 167, 0.22), transparent 44%),
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.14), transparent 42%),
+    radial-gradient(circle at 80% 92%, rgba(31, 122, 103, 0.16), transparent 42%),
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--brand-deep) 70%, #000) 0%,
+      color-mix(in srgb, var(--brand-deep) 82%, #000) 0%,
       var(--brand-deep) 58%,
-      color-mix(in srgb, var(--brand-deep) 80%, #000) 100%
+      color-mix(in srgb, var(--brand-deep) 90%, #000) 100%
     );
 }
 
@@ -31,22 +32,16 @@
   align-items: flex-start;
   gap: 10px;
 
-  .brand-mark {
-    width: 42px;
-    height: 42px;
-    background: rgba(255, 255, 255, 0.14);
-    color: #ffffff;
-  }
-
-  b {
-    font: 700 20px var(--font-head);
-    letter-spacing: -0.01em;
-  }
-
   small {
     opacity: 0.8;
     font-size: 12px;
   }
+}
+
+.login-logo {
+  width: min(280px, 82%);
+  height: auto;
+  display: block;
 }
 
 .login-pitch {

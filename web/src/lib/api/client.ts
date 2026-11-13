@@ -351,5 +351,63 @@ export const api = {
   // Unified media index (announcements + music) for the Media Manager.
   media: {
     list: () => request<(Announcement & { music: boolean })[]>("/api/media"),
+    upload: (file: File, flags: { broadcast: boolean; music: boolean }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("broadcast", String(flags.broadcast));
+      fd.append("music", String(flags.music));
+      return request<Announcement>("/api/media", { method: "POST", body: fd });
+    },
+    /** Upload with a real byte-level progress callback (XHR upload events). */
+    uploadWithProgress: (
+      file: File,
+      flags: { broadcast: boolean; music: boolean },
+      onProgress: (fraction: number) => void,
+    ) =>
+      new Promise<Announcement>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/media");
+        xhr.withCredentials = true;
+        xhr.responseType = "json";
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(e.loaded / e.total);
+        };
+        xhr.onload = () => {
+          if (xhr.status === 401) {
+            window.location.href = "/login";
+            reject(new ApiError(401, "Unauthorized"));
+            return;
+          }
+          const data = xhr.response as
+            | (Announcement & { message?: string; errors?: Record<string, string[]> })
+            | null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(data as Announcement);
+            return;
+          }
+          reject(
+            new ApiError(
+              xhr.status,
+              data?.message ?? `HTTP ${xhr.status}`,
+              data?.errors,
+            ),
+          );
+        };
+        xhr.onerror = () => reject(new ApiError(0, "Upload failed"));
+        xhr.onabort = () => reject(new ApiError(0, "Upload cancelled"));
+
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("broadcast", String(flags.broadcast));
+        fd.append("music", String(flags.music));
+        xhr.send(fd);
+      }),
+    update: (id: number, flags: { broadcast?: boolean; music?: boolean; name?: string }) =>
+      request<Announcement>(`/api/media/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(flags),
+      }),
+    remove: (id: number) =>
+      request<void>(`/api/media/${id}`, { method: "DELETE" }),
   },
 };
