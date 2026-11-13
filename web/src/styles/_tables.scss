@@ -1,0 +1,90 @@
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--pan);
+}
+
+table.data {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+
+  thead th {
+    padding: 10px 14px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--line);
+    color: var(--mut);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover {
+    background: color-mix(in srgb, var(--bg-soft) 55%, transparent);
+  }
+
+  tbody tr.inactive {
+    opacity: 0.6;
+  }
+
+  td.actions {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mut);
+
+  &:hover {
+    background: var(--bg-soft);
+    color: var(--ink);
+  }
+
+  &.danger:hover {
+    background: var(--bad2);
+    color: var(--bad);
+  }
+}
+
+.table-empty {
+  padding: 44px 16px;
+  text-align: center;
+  color: var(--mut);
+  font-size: 12px;
+}

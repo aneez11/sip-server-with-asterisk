@@ -1,6 +1,7 @@
 import ReactDOM from 'react-dom/client';
 import { App } from '@/App/App';
 import '@/main.scss';
+import '@/styles/index.scss';
 
 const rootEl = document.getElementById('root');
 if (rootEl) {

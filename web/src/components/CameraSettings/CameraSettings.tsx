@@ -18,11 +18,6 @@ const EMPTY = {
   profileToken: "",
 };
 
-/**
- * Camera section of the endpoint dialog: ONVIF host/credentials, "Test" probe,
- * profile selection and a live snapshot thumbnail. Password is write-only — the
- * API returns only `hasPassword`.
- */
 export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
   const [form, setForm] = useState(EMPTY);
   const [profiles, setProfiles] = useState<OnvifProfileView[]>([]);
@@ -73,11 +68,7 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
       });
       setProfiles(saved.profiles ?? []);
       setForm((f) => ({ ...f, password: "", profileToken: saved.profileToken }));
-      setStatus(
-        saved.lastCheckError
-          ? { ok: false, error: saved.lastCheckError }
-          : { ok: true },
-      );
+      setStatus(saved.lastCheckError ? { ok: false, error: saved.lastCheckError } : { ok: true });
       setThumb(Date.now());
       toast.success(saved.lastCheckError ? "Saved (camera not reachable)" : "Camera saved");
     } catch (e) {
@@ -90,7 +81,6 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
   const test = async () => {
     setBusy(true);
     try {
-      // Probe the values currently in the form, so "Test" works before saving.
       const r = await api.camera.test(endpointId, {
         host: form.host.trim(),
         port: form.port,
@@ -118,48 +108,45 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
   };
 
   return (
-    <div className="rounded-lg border border-border p-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[12px] font-medium">
+    <div className="camera-settings">
+      <div className="camera-head">
+        <b>
           <Camera size={14} /> Camera (ONVIF)
-        </div>
-        <Switch
-          checked={form.enabled}
-          onCheckedChange={(v) => setForm({ ...form, enabled: v })}
-        />
+        </b>
+        <Switch checked={form.enabled} onCheckedChange={(v) => setForm({ ...form, enabled: v })} />
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-2">
-          <label className="text-[11px] text-muted-foreground mb-1 block">Host / IP</label>
+      <div className="form-grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
+        <div className="form-row">
+          <label>Host / IP</label>
           <Input
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
             placeholder="192.168.10.61"
           />
         </div>
-        <div>
-          <label className="text-[11px] text-muted-foreground mb-1 block">Port</label>
+        <div className="form-row">
+          <label>Port</label>
           <Input
             value={String(form.port)}
-            onChange={(e) => setForm({ ...form, port: Number(e.target.value.replace(/\D/g, "")) || 80 })}
+            onChange={(e) =>
+              setForm({ ...form, port: Number(e.target.value.replace(/\D/g, "")) || 80 })
+            }
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[11px] text-muted-foreground mb-1 block">ONVIF user</label>
+      <div className="form-grid">
+        <div className="form-row">
+          <label>ONVIF user</label>
           <Input
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
             placeholder="admin"
           />
         </div>
-        <div>
-          <label className="text-[11px] text-muted-foreground mb-1 block">
-            Password (write-only)
-          </label>
+        <div className="form-row">
+          <label>Password (write-only)</label>
           <Input
             type="password"
             value={form.password}
@@ -170,12 +157,10 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
       </div>
 
       {profiles.length > 0 && (
-        <div>
-          <label className="text-[11px] text-muted-foreground mb-1 block">
-            Stream profile (prefer the H.264 sub-stream)
-          </label>
+        <div className="form-row">
+          <label>Stream profile (prefer the H.264 sub-stream)</label>
           <select
-            className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            className="input"
             value={form.profileToken}
             onChange={(e) => setForm({ ...form, profileToken: e.target.value })}
           >
@@ -189,27 +174,27 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="inline">
         <Button size="sm" variant="outline" onClick={() => void test()} disabled={busy || !form.host}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Test
+          <RefreshCw size={13} /> Test
         </Button>
         <Button size="sm" onClick={() => void save()} disabled={busy}>
           Save camera
         </Button>
         <Button size="sm" variant="ghost" onClick={() => void remove()}>
-          <X className="mr-1 h-3.5 w-3.5" /> Remove
+          <X size={13} /> Remove
         </Button>
       </div>
 
       {status && (
-        <div className={`text-[11px] ${status.ok ? "text-emerald-500" : "text-destructive"}`}>
+        <div className={`camera-status ${status.ok ? "ok" : "bad"}`}>
           {status.ok ? "Camera reachable" : `Camera error: ${status.error}`}
         </div>
       )}
 
       {codec && (
-        <div className={`text-[11px] ${codec.toLowerCase() === "h264" ? "text-muted-foreground" : "text-amber-500"}`}>
-          Stream codec: <span className="font-mono uppercase">{codec}</span>
+        <div className={`camera-status ${codec.toLowerCase() === "h264" ? "" : "warn"}`}>
+          Stream codec: <span className="mono" style={{ textTransform: "uppercase" }}>{codec}</span>
           {codec.toLowerCase() !== "h264"
             ? " — browsers need H.264; the server will transcode (or switch the camera stream to H.264 to save CPU)"
             : ""}
@@ -221,7 +206,7 @@ export const CameraSettings = ({ endpointId }: { endpointId: number }) => {
           key={thumb}
           src={`${api.camera.snapshotUrl(endpointId)}?t=${thumb}`}
           alt="Camera snapshot"
-          className="w-full aspect-video object-contain rounded border border-border bg-black/60"
+          className="camera-shot"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.opacity = "0.25";
           }}

@@ -4,82 +4,71 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 120 11% 94%;
+    --foreground: 207 33% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 207 33% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 207 33% 13%;
+    --primary: 167 60% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 130 8% 91%;
+    --secondary-foreground: 207 33% 13%;
+    --muted: 130 8% 91%;
+    --muted-foreground: 205 11% 41%;
+    --accent: 130 8% 91%;
+    --accent-foreground: 207 33% 13%;
+    --destructive: 4 59% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 140 9% 86%;
+    --input: 140 9% 86%;
+    --ring: 167 60% 30%;
+    --radius: 0.625rem;
 
-    --amber: 36 72% 46%;
-    --amber-dim: 36 80% 92%;
-    --teal: 160 40% 44%;
-    --teal-dim: 160 50% 90%;
-    --red: 3 72% 50%;
-    --red-dim: 3 80% 92%;
+    --amber: 35 71% 42%;
+    --amber-dim: 40 82% 92%;
+    --teal: 167 60% 30%;
+    --teal-dim: 163 40% 92%;
+    --red: 4 59% 47%;
+    --red-dim: 4 80% 93%;
   }
 
-  * { @apply border-border; }
+  :root[data-theme='dark'] {
+    --background: 208 36% 9%;
+    --foreground: 195 25% 92%;
+    --card: 203 32% 13%;
+    --card-foreground: 195 25% 92%;
+    --popover: 203 32% 13%;
+    --popover-foreground: 195 25% 92%;
+    --primary: 167 50% 53%;
+    --primary-foreground: 167 49% 8%;
+    --secondary: 206 36% 12%;
+    --secondary-foreground: 195 25% 92%;
+    --muted: 206 36% 12%;
+    --muted-foreground: 202 14% 61%;
+    --accent: 206 36% 12%;
+    --accent-foreground: 195 25% 92%;
+    --destructive: 5 79% 69%;
+    --destructive-foreground: 167 49% 8%;
+    --border: 204 25% 20%;
+    --input: 204 25% 20%;
+    --ring: 167 50% 53%;
+
+    --amber: 41 73% 59%;
+    --amber-dim: 41 45% 16%;
+    --teal: 167 50% 53%;
+    --teal-dim: 172 42% 14%;
+    --red: 5 79% 69%;
+    --red-dim: 4 37% 17%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
   body {
-    @apply bg-background text-foreground m-0 overflow-hidden;
-    font-size: 13px;
-    font-family: theme('fontFamily.sans');
+    margin: 0;
+    overflow: hidden;
+    font-size: 14px;
   }
-}
-
-@layer components {
-  .splash {
-    @apply fixed inset-0 z-[2000] flex flex-col items-center justify-center gap-3.5;
-    background: hsl(var(--background));
-    transition: opacity 220ms ease;
-
-    &.hidden { @apply opacity-0 pointer-events-none; }
-
-    .splash-mark {
-      @apply w-[46px] h-[46px] rounded-[10px] flex items-center justify-center;
-      background: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--amber-dim)));
-      color: hsl(var(--primary));
-    }
-
-    .splash-name {
-      @apply font-semibold text-lg tracking-[0.3px];
-      font-family: theme('fontFamily.display');
-    }
-
-    .splash-bar {
-      @apply w-[180px] h-[3px] rounded-sm overflow-hidden;
-      background: hsl(var(--border));
-
-      i {
-        @apply block h-full w-[30%] rounded-sm;
-        background: hsl(var(--amber));
-        animation: splash-slide 1.1s ease-in-out infinite;
-      }
-    }
-
-    .splash-note {
-      @apply text-[11px];
-      color: hsl(var(--muted-foreground));
-      font-family: theme('fontFamily.mono');
-    }
-  }
-}
-
-@keyframes splash-slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(680%); }
 }

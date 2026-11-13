@@ -1,8 +1,8 @@
 # AGENTS.md — @infinity/web
 
-React 19 + Vite + Tailwind CSS v3 (UNV theme) + SCSS desktop console. The theme and
-shell layout are ported **verbatim** from the UNV IPSpeaker project — do not change
-`tailwind.config.js` or `src/main.scss` without an explicit user request.
+React 19 + Vite + Tailwind CSS v3 (token bridge) + SCSS design system. The visual
+language, shell layout and components mirror the Cafe Management reference console
+(`styles/` partials) — keep changes consistent with it.
 Follow `.ai/rules/web-src.md` (MANDATORY) and the root `AGENTS.md`.
 
 ## Commands
@@ -17,8 +17,9 @@ Follow `.ai/rules/web-src.md` (MANDATORY) and the root `AGENTS.md`.
 ```
 src/
   main.tsx              # entry — mounts the console + splash
-  main.scss             # UNV theme tokens (verbatim) — DO NOT CHANGE
-  App/App.tsx           # console shell (grid 260 / 1fr / 300; 56 / 1fr / 32)
+  main.scss             # Tailwind directives + HSL token bridge
+  styles/               # design-system SCSS (tokens, shell, chrome, forms, dialogs)
+  App/App.tsx           # console shell (grid 80 / 1fr / 320; 56 / 1fr / auto / 44)
   components/<Name>/<Name>.tsx + <Name>.scss   # shared atomic UI
   pages/<Name>Page/<Name>Page.tsx + .scss      # Broadcast, LiveTalk, Endpoints, History
   lib/

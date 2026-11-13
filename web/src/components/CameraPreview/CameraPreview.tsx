@@ -3,16 +3,7 @@ import { MonitorSpeaker, VideoOff } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { attachCamera, startSnapshotPoll } from "@/lib/camera";
 import type { CameraSession } from "@/lib/camera";
-import { Badge } from "@/components/Badge/Badge";
 
-/**
- * Live camera preview for a two-way call.
- *
- * Mounts only while a `twoway` talk is running and the target endpoint has a
- * camera. WebRTC (WHEP) is attempted first; if the gateway/camera cannot deliver
- * video it falls back to proxied snapshots, and if that fails too the panel shows
- * a placeholder — the voice call is never affected.
- */
 export const CameraPreview = ({
   talkId,
   endpointId,
@@ -24,9 +15,7 @@ export const CameraPreview = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const [state, setState] = useState<"connecting" | "live" | "snapshot" | "off">(
-    "connecting",
-  );
+  const [state, setState] = useState<"connecting" | "live" | "snapshot" | "off">("connecting");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,7 +24,6 @@ export const CameraPreview = ({
     let stopSnapshots: (() => void) | null = null;
 
     const run = async () => {
-      // Nothing configured → hide the panel entirely.
       const cam = await api.camera.get(endpointId).catch(() => null);
       if (cancelled) return;
       if (!cam?.enabled || !cam.configured) {
@@ -58,7 +46,6 @@ export const CameraPreview = ({
         }
       }
 
-      // Fallback: still frames through the API proxy.
       if (cam.snapshotAvailable && imgRef.current) {
         stopSnapshots = startSnapshotPoll(endpointId, imgRef.current);
         setState("snapshot");
@@ -77,9 +64,9 @@ export const CameraPreview = ({
 
   if (state === "off") {
     return (
-      <div className="flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-5 text-muted-foreground">
+      <div className="state state-empty" style={{ minHeight: 56, padding: "12px 14px" }}>
         <VideoOff size={15} />
-        <span className="text-[11px]">
+        <span className="tiny">
           No camera preview for {endpointLabel}
           {error ? ` — ${error}` : ""}
         </span>
@@ -88,10 +75,10 @@ export const CameraPreview = ({
   }
 
   return (
-    <div className="flex-shrink-0 rounded-xl border border-border bg-black/90 overflow-hidden relative">
+    <div className="camera-panel">
       <video
         ref={videoRef}
-        className={`w-full aspect-video object-contain ${state === "live" ? "" : "hidden"}`}
+        style={{ display: state === "live" ? "block" : "none" }}
         autoPlay
         playsInline
         muted
@@ -99,21 +86,18 @@ export const CameraPreview = ({
       <img
         ref={imgRef}
         alt="Camera preview"
-        className={`w-full aspect-video object-contain ${state === "snapshot" ? "" : "hidden"}`}
+        style={{ display: state === "snapshot" ? "block" : "none" }}
       />
       {state === "connecting" && (
-        <div className="absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 32, color: "var(--mut)" }}>
           <MonitorSpeaker size={15} />
-          <span className="text-[11px]">Connecting camera…</span>
+          <span className="tiny">Connecting camera…</span>
         </div>
       )}
-      <div className="absolute top-2 left-2">
-        <Badge
-          variant={state === "live" ? "destructive" : "secondary"}
-          className="text-[10px] px-1.5 py-0"
-        >
+      <div className="camera-badge">
+        <span className={`chip ${state === "live" ? "bad" : "quiet"}`}>
           {state === "live" ? "Live" : state === "snapshot" ? "Snapshot" : "…"}
-        </Badge>
+        </span>
       </div>
     </div>
   );

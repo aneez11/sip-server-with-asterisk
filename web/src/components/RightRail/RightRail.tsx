@@ -1,9 +1,8 @@
-import { Mic, Radio, History, Music, Users } from "lucide-react";
+import { Activity, Mic, Music2, Radio, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useStore } from "@/store";
+import { hasContextRail } from "@/lib/tabs";
 import { Badge } from "@/components/Badge/Badge";
-import { Card, CardContent } from "@/components/Card/Card";
-import { ScrollArea } from "@/components/ScrollArea/ScrollArea";
-import { cn } from "@/lib/utils";
 
 const fmtClock = (iso: string | null) => {
   if (!iso) return "—";
@@ -12,6 +11,15 @@ const fmtClock = (iso: string | null) => {
     .map((n) => String(n).padStart(2, "0"))
     .join(":");
 };
+
+const statusVariant = (status: string) =>
+  status === "success"
+    ? "default"
+    : status === "failed"
+      ? "destructive"
+      : status === "stopped"
+        ? "secondary"
+        : "outline";
 
 export const RightRail = () => {
   const activeTab = useStore((s) => s.activeTab);
@@ -24,7 +32,6 @@ export const RightRail = () => {
   const talkPaGroupIds = useStore((s) => s.talkPaGroupIds);
   const toggleTalkPaGroup = useStore((s) => s.toggleTalkPaGroup);
   const selectedZoneIds = useStore((s) => s.selectedZoneIds);
-  const zones = useStore((s) => s.zones);
   const musicPlaying = useStore((s) => s.musicPlaying);
   const playAdhoc = useStore((s) => s.playAdhoc);
   const busy = useStore((s) => s.busy);
@@ -32,6 +39,8 @@ export const RightRail = () => {
   const currentMusicId = useStore((s) => s.currentMusicId);
   const musicTargetIds = useStore((s) => s.musicTargetIds);
   const calls = useStore((s) => s.calls);
+
+  if (!hasContextRail(activeTab)) return null;
 
   const currentTrack = currentMusicId
     ? music.find((m) => m.id === currentMusicId)
@@ -50,52 +59,31 @@ export const RightRail = () => {
 
   const active = recentLogs.filter((b) => b.status === "pending");
   const history = recentLogs.filter((b) => b.status !== "pending").slice(0, 8);
-  const statusVariant = (status: string) =>
-    status === "success"
-      ? "default"
-      : status === "failed"
-        ? "destructive"
-        : status === "stopped"
-          ? "secondary"
-          : "outline";
 
-  const headerTitle = {
-    broadcast: "Broadcast history",
-    media: "Media library",
-    monitor: "Live monitor",
-    talk: "Live talk",
-    music: "Music player",
-    endpoints: "Endpoints",
-    zones: "Zones",
-    history: "History",
-    "pa-group": "PA groups",
-  }[activeTab];
+  const headerMap: Record<string, { icon: LucideIcon; title: string }> = {
+    broadcast: { icon: Radio, title: "Recent broadcasts" },
+    talk: { icon: Mic, title: "Talk targets" },
+    monitor: { icon: Activity, title: "Call summary" },
+    music: { icon: Music2, title: "Music status" },
+  };
+  const header = headerMap[activeTab] ?? headerMap.broadcast;
+  const HeaderIcon = header.icon;
 
   return (
-    <aside className="hidden flex-col overflow-hidden border-l border-border bg-card xl:flex">
-      <div className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-border">
-        <div className="font-display font-semibold text-sm flex items-center gap-1.5">
-          {activeTab === "talk" ? (
-            <Mic size={14} />
-          ) : activeTab === "history" ? (
-            <History size={14} />
-          ) : activeTab === "music" ? (
-            <Music size={14} />
-          ) : (
-            <Radio size={14} />
-          )}
-          {headerTitle}
-        </div>
+    <aside className="context-rail">
+      <div className="context-head">
+        <span className="inline">
+          <HeaderIcon size={15} />
+          {header.title}
+        </span>
       </div>
 
-      <ScrollArea className="flex-1 px-3 py-2">
+      <div className="context-body">
         {activeTab === "talk" && (
           <>
             {paGroups.length > 0 && (
               <>
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1 pb-1.5">
-                  PA groups
-                </div>
+                <div className="context-section">PA groups</div>
                 {paGroups.map((g) => {
                   const selected = talkPaGroupIds.has(g.id);
                   const receivers = g.receiverEndpointIds ?? [];
@@ -108,64 +96,37 @@ export const RightRail = () => {
                       type="button"
                       onClick={() => toggleTalkPaGroup(g.id)}
                       title={`Talk live to every receiver in ${g.name}`}
-                      className={cn(
-                        "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors border mb-1.5",
-                        selected && recording && "bg-red-500/10 border-red-500",
-                        selected &&
-                          !recording &&
-                          "bg-primary/5 border-primary/40",
-                        !selected &&
-                          "bg-muted/50 border-transparent hover:border-primary/50",
-                      )}
+                      className={`context-card${selected && recording ? " live" : selected ? " on" : ""}`}
                     >
-                      <Users
-                        size={14}
-                        className={cn(
-                          "flex-shrink-0",
-                          selected ? "text-primary" : "text-muted-foreground",
-                        )}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium truncate">
-                          {g.name}
-                        </div>
-                        <div className="text-muted-foreground text-[10px] truncate">
-                          {receivers.length} receiver
-                          {receivers.length === 1 ? "" : "s"} · {onlineCount}{" "}
-                          online · ext {g.extension}
-                        </div>
+                      <div className="card-line">
+                        <Users size={14} className="muted" />
+                        <span className="card-name">{g.name}</span>
+                        <Badge
+                          variant={
+                            selected && recording
+                              ? "destructive"
+                              : selected
+                                ? "default"
+                                : "outline"
+                          }
+                        >
+                          {selected && recording ? "Live" : selected ? "Selected" : "Group"}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={
-                          selected && recording
-                            ? "destructive"
-                            : selected
-                              ? "default"
-                              : "outline"
-                        }
-                        className={cn(
-                          "text-[10px] px-1.5 py-0 flex-shrink-0",
-                          !selected && "text-muted-foreground",
-                        )}
-                      >
-                        {selected && recording
-                          ? "Live"
-                          : selected
-                            ? "Selected"
-                            : "Group"}
-                      </Badge>
+                      <div className="card-meta">
+                        {receivers.length} receiver{receivers.length === 1 ? "" : "s"} ·{" "}
+                        {onlineCount} online · ext {g.extension}
+                      </div>
                     </button>
                   );
                 })}
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground px-1 pt-2 pb-1.5">
-                  Endpoints
-                </div>
+                <div className="context-section">Endpoints</div>
               </>
             )}
             {endpoints.map((e) => {
               const online = e.registered && e.isActive;
-              const live = talkTargetIds.has(e.id) && recording;
               const targeted = talkTargetIds.has(e.id);
+              const live = targeted && recording;
               const viaGroup =
                 !targeted &&
                 paGroups.some(
@@ -173,7 +134,7 @@ export const RightRail = () => {
                     talkPaGroupIds.has(g.id) &&
                     (g.receiverEndpointIds ?? []).includes(e.id),
                 );
-              const effectiveTarget = targeted || viaGroup;
+              const effective = targeted || viaGroup;
               return (
                 <button
                   key={e.id}
@@ -187,226 +148,159 @@ export const RightRail = () => {
                         : "Click to talk to this endpoint"
                       : "Endpoint not registered"
                   }
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-colors border mb-1.5",
-                    !online &&
-                      "opacity-45 cursor-not-allowed bg-muted/20 border-border",
-                    online && live && "bg-red-500/10 border-red-500",
-                    online &&
-                      !live &&
-                      effectiveTarget &&
-                      "bg-primary/5 border-primary/40",
-                    online &&
-                      !live &&
-                      !effectiveTarget &&
-                      "bg-muted/50 border-transparent hover:border-primary/50",
-                  )}
+                  className={`context-card${!online ? " off" : live ? " live" : effective ? " on" : ""}`}
                 >
-                  <span
-                    className={cn(
-                      "w-2 h-2 rounded-full flex-shrink-0",
-                      !online
-                        ? "bg-muted-foreground"
-                        : live
-                          ? "bg-red-500 animate-pulse"
-                          : "bg-emerald-400",
-                    )}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate">
-                      {e.label}
-                    </div>
-                    <div className="text-muted-foreground text-[10px] truncate">
-                      {e.extension} · {e.location || "—"}
-                      {viaGroup && " · via group"}
-                    </div>
+                  <div className="card-line">
+                    <span
+                      className={`online-dot ${!online ? "off" : live ? "live" : "on"}`}
+                    />
+                    <span className="card-name">{e.label}</span>
+                    <Badge
+                      variant={live ? "destructive" : effective ? "default" : "outline"}
+                    >
+                      {live
+                        ? "Live"
+                        : online
+                          ? targeted
+                            ? "Selected"
+                            : viaGroup
+                              ? "In group"
+                              : "Online"
+                          : "Offline"}
+                    </Badge>
                   </div>
-                  <Badge
-                    variant={
-                      live ? "destructive" : effectiveTarget ? "default" : "outline"
-                    }
-                    className={cn(
-                      "text-[10px] px-1.5 py-0 flex-shrink-0",
-                      !live && !effectiveTarget && "text-muted-foreground",
-                    )}
-                  >
-                    {live
-                      ? "Live"
-                      : online
-                        ? targeted
-                          ? "Selected"
-                          : viaGroup
-                            ? "In group"
-                            : "Online"
-                        : "Offline"}
-                  </Badge>
+                  <div className="card-meta">
+                    {e.extension} · {e.location || "—"}
+                    {viaGroup ? " · via group" : ""}
+                  </div>
                 </button>
               );
             })}
           </>
         )}
+
         {activeTab === "broadcast" && (
           <>
             {history.length === 0 && active.length === 0 && (
-              <div className="text-muted-foreground text-xs text-center py-8">
+              <div className="state state-empty" style={{ minHeight: 120 }}>
                 Nothing broadcast yet
               </div>
             )}
-            {history.map((b) => (
-              <Card key={b.id} className="mb-2 bg-muted/30 border-border/50">
-                <CardContent className="p-3 space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-foreground text-xs font-medium truncate">
-                        {b.title || b.zoneName || "Broadcast"}
-                      </div>
-                      <div className="text-muted-foreground text-[10px] truncate">
-                        {b.zoneName ? `${b.zoneName} · ` : ""}
-                        {fmtClock(b.startedAt)} · {b.endpointIds?.length ?? 0}{" "}
-                        endpoint{(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <Badge
-                      variant={statusVariant(b.status)}
-                      className="text-[10px] px-1.5 py-0 flex-shrink-0"
-                    >
-                      {b.status}
-                    </Badge>
-                  </div>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                    onClick={() => void playAdhoc(b.endpointIds)}
-                    disabled={busy || b.endpointIds.length === 0}
-                    title="Rebroadcast to the same endpoint configuration"
-                  >
-                    <Radio size={11} /> Rebroadcast same targets
-                  </button>
-                </CardContent>
-              </Card>
-            ))}
             {active.map((b) => (
-              <Card
-                key={b.id}
-                className="mb-2 bg-amber-500/10 border-amber-500/20"
-              >
-                <CardContent className="p-3 space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-amber-500 text-xs font-semibold truncate flex items-center gap-1.5">
-                        <Radio size={12} className="animate-pulse" />
-                        {b.title || b.zoneName || "Broadcast"}
-                      </div>
-                      <div className="text-muted-foreground text-[10px] truncate">
-                        {b.zoneName ?? "Ad-hoc"} · {b.endpointIds?.length ?? 0}{" "}
-                        endpoint{(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
-                      </div>
+              <div key={b.id} className="card" style={{ borderColor: "var(--warn)" }}>
+                <div className="inline" style={{ gap: 6 }}>
+                  <Radio size={13} className="warn-text animate-pulse" />
+                  <b style={{ fontSize: 12 }}>
+                    {b.title || b.zoneName || "Broadcast"}
+                  </b>
+                </div>
+                <div className="card-meta" style={{ color: "var(--mut)", fontSize: 10.5 }}>
+                  {b.zoneName ?? "Ad-hoc"} · {b.endpointIds?.length ?? 0} endpoint
+                  {(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
+                </div>
+              </div>
+            ))}
+            {history.map((b) => (
+              <div key={b.id} className="card" style={{ padding: 10 }}>
+                <div className="inline" style={{ justifyContent: "space-between" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {b.title || b.zoneName || "Broadcast"}
+                    </div>
+                    <div style={{ color: "var(--mut)", fontSize: 10.5 }}>
+                      {b.zoneName ? `${b.zoneName} · ` : ""}
+                      {fmtClock(b.startedAt)} · {b.endpointIds?.length ?? 0} endpoint
+                      {(b.endpointIds?.length ?? 0) === 1 ? "" : "s"}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                  <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
+                </div>
+                <button
+                  type="button"
+                  className="btn small"
+                  style={{ width: "100%", marginTop: 8 }}
+                  onClick={() => void playAdhoc(b.endpointIds)}
+                  disabled={busy || b.endpointIds.length === 0}
+                  title="Rebroadcast to the same endpoint configuration"
+                >
+                  <Radio size={12} />
+                  Rebroadcast
+                </button>
+              </div>
             ))}
           </>
         )}
+
         {activeTab === "music" && (
           <>
             {musicPlaying ? (
-              <Card className="mb-2 bg-emerald-500/10 border-emerald-500/20">
-                <CardContent className="p-3 space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-emerald-500 text-xs font-semibold truncate flex items-center gap-1.5">
-                        <Music size={12} className="animate-pulse" />
-                        {currentTrack?.name ?? "Playing"}
-                      </div>
-                      <div className="text-muted-foreground text-[10px] truncate">
-                        {musicTargetIds.length} endpoint
-                        {musicTargetIds.length === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="card" style={{ borderColor: "var(--ok)" }}>
+                <div className="inline" style={{ gap: 6 }}>
+                  <Music2 size={13} className="ok-text" />
+                  <b style={{ fontSize: 12 }}>{currentTrack?.name ?? "Playing"}</b>
+                </div>
+                <div className="card-meta" style={{ color: "var(--mut)", fontSize: 10.5 }}>
+                  {musicTargetIds.length} endpoint
+                  {musicTargetIds.length === 1 ? "" : "s"}
+                </div>
+              </div>
             ) : (
-              <div className="text-muted-foreground text-xs text-center py-8">
+              <div className="state state-empty" style={{ minHeight: 120 }}>
                 Nothing playing — pick a track in the main panel.
               </div>
             )}
-            <div className="text-muted-foreground text-[11px] px-2 py-1">
+            <div className="context-section">
               {music.length} track{music.length === 1 ? "" : "s"} in library
             </div>
           </>
         )}
-        {activeTab === "monitor" && (
-          <>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Active calls</span>
-                <span className="text-foreground font-semibold">
-                  {monitorCalls.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Targeted</span>
-                <span className="text-foreground font-semibold">
-                  {monitorTargets}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Receiving</span>
-                <span className="text-emerald-500 font-semibold">
-                  {monitorReceiving}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Unavailable</span>
-                <span
-                  className={cn(
-                    "font-semibold",
-                    monitorMissed > 0 ? "text-red-500" : "text-foreground",
-                  )}
-                >
-                  {monitorMissed}
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-        {activeTab === "history" && (
-          <div className="text-muted-foreground text-xs text-center py-8">
-            Full history is in the main panel.
-          </div>
-        )}{" "}
-        {activeTab === "endpoints" && (
-          <div className="text-muted-foreground text-xs text-center py-8">
-            Manage endpoints in the main panel.
-          </div>
-        )}
-        {activeTab === "zones" && (
-          <div className="text-muted-foreground text-xs text-center py-8">
-            Manage zones in the main panel.
-          </div>
-        )}
-      </ScrollArea>
 
-      <div className="flex-shrink-0 border-t border-border bg-muted/30 px-4 py-2.5 space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Endpoints</span>
-          <span className="text-foreground font-semibold">
-            {endpoints.length}
-          </span>
+        {activeTab === "monitor" && (
+          <div className="stack-sm">
+            <div className="meta-row">
+              <span>Active calls</span>
+              <strong>{monitorCalls.length}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Targeted endpoints</span>
+              <strong>{monitorTargets}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Receiving now</span>
+              <strong className="ok-text">{monitorReceiving}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Unavailable</span>
+              <strong className={monitorMissed > 0 ? "bad-text" : ""}>
+                {monitorMissed}
+              </strong>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="context-foot">
+        <div className="meta-row">
+          <span>Endpoints</span>
+          <strong>{endpoints.length}</strong>
         </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Registered</span>
-          <span className="text-emerald-500 font-semibold">
+        <div className="meta-row">
+          <span>Registered</span>
+          <strong className="ok-text">
             {endpoints.filter((e) => e.registered).length}
-          </span>
+          </strong>
         </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Zones selected</span>
-          <span className="text-foreground font-semibold">
-            {selectedZoneIds.size}
-          </span>
+        <div className="meta-row">
+          <span>Zones selected</span>
+          <strong>{selectedZoneIds.size}</strong>
         </div>
       </div>
     </aside>

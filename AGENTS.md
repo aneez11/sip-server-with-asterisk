@@ -8,7 +8,7 @@ UNV IPSpeaker project.
 Infinity Echo/
   shared/     @infinity/shared  — domain types + socket event contracts
   api/        @infinity/api     — Node/TS backend (Express + raw AMI + Socket.IO + Prisma)
-  web/        @infinity/web     — React 19 + Vite + TS SPA (UNV theme, folder-per-component)
+  web/        @infinity/web     — React 19 + Vite + TS SPA (design-system components, folder-per-component)
   docs/       design-*.md       — source of truth for intended behavior (docs-first)
 ```
 
@@ -53,7 +53,6 @@ paging ConfBridge. See `docs/design-live-talk.md`.
 - **No secrets:** never commit `.env`, keys, or tokens.
 - **Docs are not code:** update `docs/` when the user asks, or as part of the
   docs-first workflow when a feature ships.
-- **Theme is frozen:** `web/tailwind.config.js` + `web/src/main.scss` are ported
-  verbatim from UNV IPSpeaker — do not change without explicit user request.
+- **Theme changes are deliberate:** keep UI work on the tokens/classes in `web/src/styles/`; do not reintroduce ad-hoc palettes.
 - **Validation is mirrored, not duplicated:** the API's zod schemas and the web's
   form schemas stay in sync for the same entities.

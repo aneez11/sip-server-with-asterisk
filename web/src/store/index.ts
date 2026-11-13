@@ -16,6 +16,7 @@ import { api, ApiError } from "@/lib/api/client";
 import { MicAccessError, requireMicDevices } from "@/lib/mic";
 import { talkSocket } from "@/lib/api/socket";
 import { DeviceAudioError, liveTalk } from "@/recorder/recorder";import { webmToWav } from "@/lib/audio";
+import type { Tab } from "@/lib/tabs";
 
 interface StoreState {
   endpoints: Endpoint[];
@@ -29,21 +30,10 @@ interface StoreState {
   lastSync: Date | null;
   /** Whether the API is connected to Asterisk's AMI. */
   amiConnected: boolean;
-  activeTab:
-    | "broadcast"
-    | "media"
-    | "talk"
-    | "music"
-    | "endpoints"
-    | "zones"
-    | "history"
-    | "monitor"
-    | "pa-group";
+  activeTab: Tab;
   /** Live active calls snapshot (Monitor dashboard). */
   calls: CallsSnapshot | null;
   selectedZoneIds: Set<number>;
-  collapsedZones: Set<string>;
-  searchQuery: string;
   recording: boolean;
   activeTalkId: string | null;
   talkMode: "live" | "twoway" | null;
@@ -74,9 +64,7 @@ interface StoreState {
   setCalls: (snapshot: CallsSnapshot) => void;
   endCallMonitor: (callId: string) => Promise<void>;
   addToast: (msg: string, kind?: "success" | "error") => void;
-  setActiveTab: (t: StoreState["activeTab"]) => void;
-  setSearchQuery: (q: string) => void;
-  toggleCollapsed: (zone: string) => void;
+  setActiveTab: (t: Tab) => void;
   toggleZone: (id: number) => void;
   setTalkTargets: (ids: number[]) => void;
   toggleTalkTarget: (id: number) => void;
@@ -236,8 +224,6 @@ export const useStore = create<StoreState>((set, get) => {
     activeTab: "broadcast",
     calls: null,
     selectedZoneIds: new Set(),
-    collapsedZones: new Set(),
-    searchQuery: "",
     recording: false,
     activeTalkId: null,
     talkMode: null,
@@ -297,13 +283,6 @@ export const useStore = create<StoreState>((set, get) => {
     addToast,
 
     setActiveTab: (t) => set({ activeTab: t }),
-    setSearchQuery: (q) => set({ searchQuery: q }),
-    toggleCollapsed: (zone) =>
-      set((s) => {
-        const z = new Set(s.collapsedZones);
-        z.has(zone) ? z.delete(zone) : z.add(zone);
-        return { collapsedZones: z };
-      }),
     toggleZone: (id) =>
       set((s) => {
         const z = new Set(s.selectedZoneIds);

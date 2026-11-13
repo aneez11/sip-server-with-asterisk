@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Radio, Square, PhoneCall, ShieldAlert, Mic, MonitorSpeaker, WifiOff } from 'lucide-react';
+import { Mic, MonitorSpeaker, PhoneCall, Radio, ShieldAlert, Square, WifiOff } from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
 import { CameraPreview } from '@/components/CameraPreview/CameraPreview';
+import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
 import { suggestedHttpsOrigin } from '@/lib/mic';
 
 const METER_BARS = 24;
@@ -31,10 +32,7 @@ export const LiveTalkPage = () => {
       const level = useStore.getState().talkLevel;
       const lit = Math.round(Math.min(1, level) * METER_BARS);
       meterRefs.current.forEach((bar, i) => {
-        if (bar) {
-          bar.classList.toggle('bg-emerald-500', i < lit);
-          bar.classList.toggle('bg-border', i >= lit);
-        }
+        if (bar) bar.classList.toggle('lit', i < lit);
       });
       frame = requestAnimationFrame(loop);
     };
@@ -45,16 +43,9 @@ export const LiveTalkPage = () => {
   const onlineCount = endpoints.filter((e) => e.registered).length;
   const twoway = talkMode === 'twoway';
 
-  // A two-way call can show the room camera. The target is the single endpoint
-  // of the talk; the preview mounts only while the call is up.
-  const twowayEndpointId = twoway && talkTargetIds.size === 1
-    ? [...talkTargetIds][0]
-    : null;
-  const twowayEndpointLabel =
-    endpoints.find((e) => e.id === twowayEndpointId)?.label ?? 'endpoint';
+  const twowayEndpointId = twoway && talkTargetIds.size === 1 ? [...talkTargetIds][0] : null;
+  const twowayEndpointLabel = endpoints.find((e) => e.id === twowayEndpointId)?.label ?? 'endpoint';
 
-  // Live talk can target endpoints, PA groups, or both — a PA group counts as
-  // every one of its receivers, so the summary reflects the resolved fan-out.
   const groupReceiverIds = paGroups
     .filter((g) => talkPaGroupIds.has(g.id))
     .flatMap((g) => g.receiverEndpointIds ?? []);
@@ -62,24 +53,36 @@ export const LiveTalkPage = () => {
   const groupCount = talkPaGroupIds.size;
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="page-fill" style={{ overflowY: 'auto', paddingRight: 4 }}>
+      <ScreenHeader
+        title="Live talk"
+        subtitle={
+          recording
+            ? twoway
+              ? 'Two-way call in progress — talk and listen to the selected phone'
+              : `Live broadcast — ${targetCount} target${targetCount === 1 ? '' : 's'} hearing your mic live${
+                  groupCount > 0 ? ` via ${groupCount} PA group${groupCount === 1 ? '' : 's'}` : ''
+                }`
+            : `Pick endpoints or PA groups in the right panel (${onlineCount} registered), then start. One phone = two-way call; multiple endpoints or a PA group = live one-way broadcast.`
+        }
+      />
+
       {talkConnectionLost && (
-        <div className="flex-shrink-0 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-          <WifiOff className="h-4 w-4 mt-0.5 text-amber-500 flex-shrink-0" />
-          <div className="text-xs leading-relaxed">
-            <span className="font-medium">Connection lost.</span> The broadcast is
-            being held on the server for two minutes and resumes when this page
-            reconnects. Keep this tab open.
+        <div className="note-box">
+          <WifiOff size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <b>Connection lost.</b> The broadcast is held on the server for two minutes and resumes when this
+            page reconnects. Keep this tab open.
           </div>
         </div>
       )}
+
       {!window.isSecureContext && (
-        <div className="flex-shrink-0 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-          <ShieldAlert className="h-4 w-4 mt-0.5 text-amber-500 flex-shrink-0" />
-          <div className="text-xs leading-relaxed">
-            <span className="font-medium">Microphone blocked — this page is not a secure context.</span>{' '}
-            Browsers hide the microphone API on plain HTTP, so Live Talk cannot record here.
-            Open{' '}
+        <div className="note-box">
+          <ShieldAlert size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <b>Microphone blocked — this page is not a secure context.</b> Browsers hide the microphone API
+            on plain HTTP, so Live Talk cannot record here. Open{' '}
             <a className="underline font-medium" href={`${suggestedHttpsOrigin()}${window.location.pathname}`}>
               {suggestedHttpsOrigin()}
             </a>{' '}
@@ -88,87 +91,60 @@ export const LiveTalkPage = () => {
         </div>
       )}
 
-      <div className="flex-shrink-0">
-        <span className="text-xs text-muted-foreground">          {recording
-            ? twoway
-              ? 'Two-way call in progress — talk and listen to the selected phone'
-              : `Live broadcast — ${targetCount} target${targetCount === 1 ? '' : 's'} hearing your mic live${
-                  groupCount > 0
-                    ? ` via ${groupCount} PA group${groupCount === 1 ? '' : 's'}`
-                    : ''
-                }`
-            : `Select endpoints or PA groups from the right panel (${onlineCount} registered), then Start talk. One phone endpoint = two-way call; multiple endpoints or a PA group = live one-way broadcast.`}
-        </span>
-      </div>
-
       {recording && twowayEndpointId !== null && activeTalkId && (
-        <CameraPreview
-          talkId={activeTalkId}
-          endpointId={twowayEndpointId}
-          endpointLabel={twowayEndpointLabel}
-        />
+        <CameraPreview talkId={activeTalkId} endpointId={twowayEndpointId} endpointLabel={twowayEndpointLabel} />
       )}
 
-      <div className="flex-shrink-0 border rounded-xl bg-card shadow-lg p-4 flex flex-col items-center gap-3 mt-auto">
+      <div className="talk-stage">
         {!recording && (
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <div className="source-toggle">
             <button
               type="button"
+              className={talkSource === 'mic' ? 'on' : ''}
               onClick={() => setTalkSource('mic')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                talkSource === 'mic'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
             >
-              <Mic size={13} />
-              Microphone
+              <Mic size={13} /> Microphone
             </button>
             <button
               type="button"
+              className={talkSource === 'device' ? 'on' : ''}
               onClick={() => setTalkSource('device')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                talkSource === 'device'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
             >
-              <MonitorSpeaker size={13} />
-              Device audio
+              <MonitorSpeaker size={13} /> Device audio
             </button>
           </div>
         )}
 
-        <div className="flex items-end justify-center gap-[2px] h-10">
+        <div className="level-meter" aria-hidden="true">
           {Array.from({ length: METER_BARS }).map((_, i) => (
             <span
               key={i}
-              ref={(el) => { meterRefs.current[i] = el; }}
-              className="w-1.5 rounded-sm bg-border transition-colors duration-75"
+              ref={(el) => {
+                meterRefs.current[i] = el;
+              }}
               style={{ height: `${Math.max(3, ((i + 1) / METER_BARS) * 38)}px` }}
             />
           ))}
         </div>
 
         {recording ? (
-          <Button variant="destructive" size="lg" className="min-w-[190px]" onClick={() => void stopLiveTalk()} disabled={busy}>
-            <Square className="mr-2 h-4 w-4" />
-            Stop talk
+          <Button variant="destructive" size="lg" style={{ minWidth: 190 }} onClick={() => void stopLiveTalk()} disabled={busy}>
+            <Square size={15} /> Stop talk
           </Button>
         ) : (
-          <Button variant="default" size="lg" className="min-w-[190px]" onClick={() => void startLiveTalk()} disabled={busy}>
+          <Button size="lg" style={{ minWidth: 190 }} onClick={() => void startLiveTalk()} disabled={busy}>
             {talkSource === 'device' ? (
-              <MonitorSpeaker className="mr-2 h-4 w-4" />
+              <MonitorSpeaker size={16} />
             ) : twoway ? (
-              <PhoneCall className="mr-2 h-4 w-4" />
+              <PhoneCall size={16} />
             ) : (
-              <Radio className="mr-2 h-4 w-4" />
+              <Radio size={16} />
             )}
             {talkSource === 'device' ? 'Share device audio' : 'Start talk'}
           </Button>
         )}
 
-        <p className="text-muted-foreground text-[10px] text-center max-w-md leading-relaxed">
+        <p className="note" style={{ textAlign: 'center', maxWidth: 520, margin: 0 }}>
           {recording
             ? twoway
               ? 'Your voice is streamed live to the phone and the phone audio comes back here — a normal call.'

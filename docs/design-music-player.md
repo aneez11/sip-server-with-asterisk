@@ -13,8 +13,8 @@ a playlist-player UX with auto-advance — the practical equivalent for PA music
 1. Upload a WAV track → stored like an announcement, but flagged `music = true`
    (same `Announcement` table; excluded from the announcement library and the
    status overview splits it into a separate `music` array).
-2. Operator selects zones to stream to (inline chips, defaulting to the sidebar's
-   selected zones).
+2. Operator selects zones to stream to (inline chips; the selection lives in the
+   store so it persists across tabs).
 3. **Play** → `POST /api/music/:id/play` → originates `Local/9001@music` with
    `Application: Playback` (the track) and `PAGE_MEMBERS`/`BROADCAST_LOG_ID`.
    The `[music]` context runs `Page(${PAGE_MEMBERS},q,i)` — `q` = quiet, so no

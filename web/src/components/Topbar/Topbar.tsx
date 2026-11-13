@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
-import { MonitorSpeaker, LogOut } from "lucide-react";
+import {
+  Clock3,
+  LogOut,
+  MonitorSpeaker,
+  Moon,
+  Radio,
+  Sun,
+  UserRound,
+} from "lucide-react";
 import { useStore } from "@/store";
-import { Badge } from "@/components/Badge/Badge";
-import { Separator } from "@/components/Separator/Separator";
-import { Button } from "@/components/Button/Button";
+import { useTheme } from "@/lib/theme";
 
 const fmtClock = (d: Date) =>
   [d.getHours(), d.getMinutes(), d.getSeconds()]
@@ -13,6 +19,8 @@ const fmtClock = (d: Date) =>
 export const Topbar = () => {
   const endpoints = useStore((s) => s.endpoints);
   const recording = useStore((s) => s.recording);
+  const amiConnected = useStore((s) => s.amiConnected);
+  const { theme, toggle } = useTheme();
   const [clock, setClock] = useState(() => fmtClock(new Date()));
 
   useEffect(() => {
@@ -22,67 +30,82 @@ export const Topbar = () => {
 
   const registered = endpoints.filter((e) => e.registered).length;
   const total = endpoints.length;
-  const variant =
-    total === 0
-      ? "outline"
-      : registered === total
-        ? "default"
-        : registered === 0
-          ? "destructive"
-          : "secondary";
-  const text =
-    total === 0 ? "No endpoints" : `${registered} / ${total} registered`;
+  const regTone =
+    total === 0 ? "quiet" : registered === total ? "ok" : registered === 0 ? "bad" : "warn";
 
   return (
-    <header className="col-span-1 flex min-w-0 items-center justify-between border-b border-border bg-card px-3 select-none sm:px-5 lg:col-span-2 xl:col-span-3">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <div className="w-7 h-7 rounded-md bg-primary/15 flex items-center justify-center">
-          <MonitorSpeaker className="w-4 h-4 text-primary" />
-        </div>
-        <span className="font-display font-semibold text-[15px] tracking-wide">
-          Paging console
+    <header className="topbar">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">
+          <MonitorSpeaker size={18} />
         </span>
-        <Separator
-          orientation="vertical"
-          className="mx-1 hidden h-4 sm:block"
-        />
-        <span className="hidden truncate font-mono text-[11px] text-muted-foreground sm:block">
-          Infinity Echo · Institute SIP PA
+        <span className="brand-text">
+          <b>Paging console</b>
+          <small className="hide-lg">Infinity Echo · Institute SIP PA</small>
         </span>
       </div>
-      <div className="flex flex-shrink-0 items-center gap-2 sm:gap-4">
-        {recording && (
-          <Badge
-            variant="destructive"
-            className="font-mono text-[11px] gap-1.5"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
-            Recording
-          </Badge>
-        )}
-        <Badge variant={variant} className="font-mono text-[11px] gap-1.5">
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${total === 0 || registered === 0 ? "bg-destructive" : registered === total ? "bg-emerald-400" : "bg-amber-400"}`}
-          />
-          {text}
-        </Badge>
-        <span className="hidden font-mono text-xs text-muted-foreground sm:block">
-          {clock}
+
+      <span className="spacer" />
+
+      {recording ? (
+        <span className="chip bad hide-md">
+          <i className="dot" aria-hidden="true" />
+          Recording
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground"
-          onClick={() =>
-            void fetch("/api/auth/logout", { method: "POST" }).then(() =>
-              window.location.reload(),
-            )
-          }
-        >
-          <LogOut size={13} className="mr-1" />
-          Logout
-        </Button>
-      </div>
+      ) : null}
+
+      <span
+        className={`chip ${regTone} hide-md`}
+        title="SIP endpoints currently registered"
+      >
+        <Radio size={13} />
+        {total === 0 ? "No endpoints" : `${registered} / ${total} registered`}
+      </span>
+
+      <span
+        className={`chip ${amiConnected ? "" : "bad"} hide-md`}
+        title="Asterisk AMI connection"
+      >
+        <i className="dot" aria-hidden="true" />
+        {amiConnected ? "AMI connected" : "AMI offline"}
+      </span>
+
+      <span className="clock-chip" title="Local time">
+        <Clock3 size={15} />
+        <b>{clock}</b>
+      </span>
+
+      <span className="user-chip">
+        <UserRound size={16} />
+        <span>
+          <b>Operator</b>
+          <small>Signed in</small>
+        </span>
+      </span>
+
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={toggle}
+        aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        title={theme === "dark" ? "Light theme" : "Dark theme"}
+      >
+        {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
+
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={() =>
+          void fetch("/api/auth/logout", { method: "POST" }).then(() =>
+            window.location.reload(),
+          )
+        }
+        aria-label="Sign out"
+        title="Sign out"
+      >
+        <LogOut size={18} />
+      </button>
     </header>
   );
 };

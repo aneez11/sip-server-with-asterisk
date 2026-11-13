@@ -37,11 +37,10 @@ Pages consume **hooks**; hooks wrap **services**; services are the data boundary
 
 ## Theme
 
-The visual theme is ported VERBATIM from the UNV IPSpeaker project: `tailwind.config.js`
-and `web/src/main.scss` must not be changed unless the user explicitly asks for a
-theme change. Follow the existing token variables (`--background`, `--primary`,
-`--muted-foreground`, `--amber`, `--teal`, `--red`, …) and the shell grid
-(260px / 1fr / 300px columns; 56px / 1fr / 32px rows).
+The console uses the SCSS design system under `web/src/styles/` (tokens, shell,
+page chrome, forms, dialogs). Keep new UI on those tokens/classes (`btn`, `card`,
+`field`, `chip`, `screen-head`) and the shell grid (80px rail / 1fr workspace /
+320px context rail; 56px / 1fr / auto player / 44px rows).
 
 ## Form validation
 

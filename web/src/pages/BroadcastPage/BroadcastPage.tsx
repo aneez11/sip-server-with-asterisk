@@ -1,20 +1,22 @@
 import { useRef, useState } from "react";
 import {
-  Play,
-  Upload,
-  Trash2,
-  Radio,
-  Mic,
-  Square,
-  Phone,
-  Volume2,
-  Layers,
   Headphones,
+  Layers,
+  Mic,
+  Phone,
+  Play,
+  Radio,
+  Search,
+  Square,
+  Trash2,
+  Upload,
+  Volume2,
 } from "lucide-react";
 import { useStore } from "@/store";
 import { Button } from "@/components/Button/Button";
-import { Card, CardContent } from "@/components/Card/Card";
-import { cn } from "@/lib/utils";
+import { Card } from "@/components/Card/Card";
+import { ScreenHeader } from "@/components/ScreenHeader/ScreenHeader";
+import { Input } from "@/components/Input/Input";
 import { api } from "@/lib/api/client";
 
 const fmtSize = (b: number) => {
@@ -52,6 +54,7 @@ export const BroadcastPage = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [targets, setTargets] = useState<TargetKind[]>([]);
+  const [filter, setFilter] = useState("");
 
   const registeredIds = endpoints
     .filter((e) => e.isActive && e.registered)
@@ -68,7 +71,6 @@ export const BroadcastPage = () => {
   const isOn = (t: TargetKind) =>
     targets.some((p) => p.kind === t.kind && p.id === t.id);
 
-  // Resolve the union of selected endpoint ids (direct + zone members + group receivers).
   const targetedIds = Array.from(
     new Set([
       ...targets.filter((t) => t.kind === "endpoint").map((t) => t.id),
@@ -85,238 +87,224 @@ export const BroadcastPage = () => {
     endpoints.some((e) => e.id === id && e.isActive && e.registered),
   );
 
+  const q = filter.trim().toLowerCase();
+  const matches = (...fields: (string | null | undefined)[]) =>
+    !q || fields.some((f) => f?.toLowerCase().includes(q));
+
+  const visibleEndpoints = endpoints.filter(
+    (e) => e.isActive && matches(e.label, e.extension, e.location),
+  );
+  const visibleZones = zones.filter((z) => matches(z.name));
+  const visibleGroups = paGroups.filter((g) => matches(g.name, g.extension));
+  const visibleTargetCount =
+    visibleEndpoints.length + visibleZones.length + visibleGroups.length;
+
   return (
-    <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between flex-shrink-0">
-        <span className="text-xs text-muted-foreground">
-          {announcements.length} announcement
-          {announcements.length === 1 ? "" : "s"} · select endpoints, zones or
-          PA groups below, then play
-        </span>
-        <div className="flex items-center gap-2">
-          {recordingAnnouncement ? (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="text-xs"
-              onClick={() => void cancelAnnouncementRecording()}
-            >
-              <Square className="mr-1.5 h-3.5 w-3.5 fill-current" /> Recording —
-              Stop
-            </Button>
-          ) : (
+    <div className="page-scroll">
+      <ScreenHeader
+        title="Broadcast"
+        subtitle={`${announcements.length} announcement${announcements.length === 1 ? "" : "s"} · pick endpoints, zones or PA groups, then play`}
+        actions={
+          <>
+            {recordingAnnouncement ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void cancelAnnouncementRecording()}
+              >
+                <Square size={13} className="fill-current" /> Recording — Stop
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => void recordAnnouncement()}>
+                <Mic size={13} /> Record
+              </Button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".wav,.mp3,audio/wav,audio/mpeg"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadAnnouncement(f);
+                e.target.value = "";
+              }}
+            />
             <Button
               variant="outline"
               size="sm"
-              className="text-xs"
-              onClick={() => void recordAnnouncement()}
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
             >
-              <Mic className="mr-1.5 h-3.5 w-3.5" /> Record
+              <Upload size={13} /> Upload
             </Button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".wav,.mp3,audio/wav,audio/mpeg"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void uploadAnnouncement(f);
-              e.target.value = "";
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-          >
-            <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
-          </Button>
-        </div>
+          </>
+        }
+      />
+
+      <div className="target-filter">
+        <Search size={14} />
+        <Input
+          placeholder="Filter endpoints, zones or PA groups by name, extension or location"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <span className="muted tiny">
+          {visibleTargetCount} target{visibleTargetCount === 1 ? "" : "s"}
+        </span>
       </div>
 
-      {/* Selectable target cards: endpoints, zones, PA groups */}
-      <div className="flex-shrink-0 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-        {endpoints
-          .filter((e) => e.isActive)
+      <div className="target-grid">
+        {visibleEndpoints
           .map((e) => {
             const t: TargetKind = { kind: "endpoint", id: e.id };
             return (
               <button
                 key={`ep-${e.id}`}
+                type="button"
                 onClick={() => toggle(t)}
-                className={cn(
-                  "rounded-xl border text-left p-2.5 transition-colors",
-                  isOn(t)
-                    ? "bg-primary/10 border-primary"
-                    : "bg-card border-border hover:border-muted-foreground/40",
-                )}
+                className={`target-tile${isOn(t) ? " on" : ""}`}
               >
-                <div className="flex items-center gap-1.5">
-                  {e.type === "speaker" ? (
-                    <Volume2 size={12} className="text-muted-foreground" />
-                  ) : (
-                    <Phone size={12} className="text-muted-foreground" />
-                  )}
-                  <span className="text-[12px] font-medium truncate">
-                    {e.label}
-                  </span>
+                <div className="tile-name">
+                  {e.type === "speaker" ? <Volume2 size={12} /> : <Phone size={12} />}
+                  <span>{e.label}</span>
                 </div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    {e.extension}
-                  </span>
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 rounded-full",
-                      e.registered ? "bg-emerald-400" : "bg-muted-foreground",
-                    )}
-                  />
+                <div className="tile-meta">
+                  <span>{e.extension}</span>
+                  <span className={`online-dot ${e.registered ? "on" : "off"}`} />
                 </div>
               </button>
             );
           })}
 
-        {zones.map((z) => {
+        {visibleZones.map((z) => {
           const t: TargetKind = { kind: "zone", id: z.id };
           return (
             <button
               key={`zn-${z.id}`}
+              type="button"
               onClick={() => toggle(t)}
-              className={cn(
-                "rounded-xl border text-left p-2.5 transition-colors",
-                isOn(t)
-                  ? "bg-primary/10 border-primary"
-                  : "bg-card border-border hover:border-muted-foreground/40",
-              )}
+              className={`target-tile${isOn(t) ? " on" : ""}`}
             >
-              <div className="flex items-center gap-1.5">
-                <Layers size={12} className="text-muted-foreground" />
-                <span className="text-[12px] font-medium truncate">
-                  {z.name}
-                </span>
+              <div className="tile-name">
+                <Layers size={12} />
+                <span>{z.name}</span>
               </div>
-              <div className="font-mono text-[10px] text-muted-foreground mt-1">
+              <div className="tile-meta">
                 {z.endpointCount} endpoint{z.endpointCount === 1 ? "" : "s"}
               </div>
             </button>
           );
         })}
 
-        {paGroups.map((g) => {
+        {visibleGroups.map((g) => {
           const t: TargetKind = { kind: "group", id: g.id };
           return (
             <button
               key={`gr-${g.id}`}
+              type="button"
               onClick={() => toggle(t)}
-              className={cn(
-                "rounded-xl border text-left p-2.5 transition-colors",
-                isOn(t)
-                  ? "bg-primary/10 border-primary"
-                  : "bg-card border-border hover:border-muted-foreground/40",
-              )}
+              className={`target-tile${isOn(t) ? " on" : ""}`}
             >
-              <div className="flex items-center gap-1.5">
-                <Headphones size={12} className="text-muted-foreground" />
-                <span className="text-[12px] font-medium truncate">
-                  {g.name}
-                </span>
+              <div className="tile-name">
+                <Headphones size={12} />
+                <span>{g.name}</span>
               </div>
-              <div className="font-mono text-[10px] text-muted-foreground mt-1">
+              <div className="tile-meta">
                 {g.receiverEndpointIds.length} receiver
                 {g.receiverEndpointIds.length === 1 ? "" : "s"}
               </div>
             </button>
           );
         })}
+
+        {visibleTargetCount === 0 && (
+          <div className="state state-empty" style={{ gridColumn: "1 / -1" }}>
+            {filter.trim()
+              ? `No targets match “${filter.trim()}”.`
+              : "No endpoints, zones or PA groups are available yet."}
+          </div>
+        )}
       </div>
 
-      {/* Announcements */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 content-start">
+      <div className="grid-cards">
         {announcements.map((a) => (
-          <Card key={a.id} className="bg-card">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{a.name}</div>
-                  <div className="text-muted-foreground text-[10px] font-mono mt-0.5">
-                    {a.originalName} · {fmtSize(a.fileSize)}
-                    {a.duration ? ` · ${fmtDur(a.duration)}` : ""}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    className="p-1 text-muted-foreground hover:text-primary transition-colors"
-                    onClick={() =>
-                      setPreviewId(previewId === a.id ? null : a.id)
-                    }
-                    title="Preview locally"
-                  >
-                    <Play size={13} />
-                  </button>
-                  <button
-                    className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                    onClick={() => void removeAnnouncement(a.id)}
-                    title="Delete"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+          <Card key={a.id} className="announce-card">
+            <div className="inline" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="announce-name">{a.name}</div>
+                <div className="announce-meta">
+                  {a.originalName} · {fmtSize(a.fileSize)}
+                  {a.duration ? ` · ${fmtDur(a.duration)}` : ""}
                 </div>
               </div>
-              {previewId === a.id && (
-                <audio
-                  controls
-                  preload="auto"
-                  className="w-full h-8"
-                  src={api.announcements.audioUrl(a.id)}
-                />
-              )}
-              <div className="flex gap-2">
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex-1 h-7 text-[11px]"
-                  disabled={busy || targetedIds.length === 0}
-                  onClick={() => void playAnnouncement(a.id, targetedIds)}
+              <div className="inline" style={{ gap: 2, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="icon-link"
+                  onClick={() => setPreviewId(previewId === a.id ? null : a.id)}
+                  title="Preview locally"
                 >
-                  <Play className="w-3 h-3 mr-1" /> To {targetedIds.length}{" "}
-                  selected
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 h-7 text-[11px]"
-                  disabled={busy || registeredIds.length === 0}
-                  onClick={() => void playAnnouncement(a.id, registeredIds)}
+                  <Play size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-link danger"
+                  onClick={() => void removeAnnouncement(a.id)}
+                  title="Delete"
                 >
-                  <Radio className="w-3 h-3 mr-1" /> All registered
-                </Button>
+                  <Trash2 size={13} />
+                </button>
               </div>
-            </CardContent>
+            </div>
+
+            {previewId === a.id && (
+              <audio
+                controls
+                preload="auto"
+                style={{ width: "100%", height: 32, marginTop: 10 }}
+                src={api.announcements.audioUrl(a.id)}
+              />
+            )}
+
+            <div className="announce-actions" style={{ marginTop: 10 }}>
+              <Button
+                size="sm"
+                disabled={busy || targetedIds.length === 0}
+                onClick={() => void playAnnouncement(a.id, targetedIds)}
+              >
+                <Play size={12} /> To {targetedIds.length} selected
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || registeredIds.length === 0}
+                onClick={() => void playAnnouncement(a.id, registeredIds)}
+              >
+                <Radio size={12} /> All registered
+              </Button>
+            </div>
           </Card>
         ))}
+
         {announcements.length === 0 && (
-          <div className="col-span-full border rounded-xl bg-muted/30 p-10 text-center text-xs text-muted-foreground">
+          <div className="state state-empty" style={{ gridColumn: "1 / -1" }}>
             No announcements yet — upload a WAV file or record one.
           </div>
         )}
       </div>
 
-      <div className="flex-shrink-0 border rounded-xl bg-card shadow-lg p-4 flex items-center justify-between gap-4 mt-auto">
-        <span className="text-muted-foreground text-xs">
-          {targetedIds.length} targeted endpoint
-          {targetedIds.length === 1 ? "" : "s"}
+      <div className="broadcast-bar" style={{ marginTop: "auto" }}>
+        <span className="muted tiny">
+          {targetedIds.length} targeted endpoint{targetedIds.length === 1 ? "" : "s"}
         </span>
         <Button
           variant="outline"
           size="sm"
-          className="text-xs"
           disabled={busy || targetedIds.length === 0}
           onClick={() => void playAdhoc(targetedIds)}
         >
-          <Play className="mr-1.5 h-3.5 w-3.5" /> Broadcast default
+          <Play size={13} /> Broadcast default
         </Button>
       </div>
     </div>
