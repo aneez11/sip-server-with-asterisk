@@ -533,7 +533,9 @@ export function toView(row: CameraRow | null): CameraView {
     profileToken: row.profileToken,
     profileName: row.profileName,
     streamUri: row.rtspUri || null,
-    snapshotAvailable: Boolean(row.snapshotUri),
+    // A snapshot URI is preferred, but the gateway can also serve a JPEG frame
+    // from the RTSP stream when the camera has no ONVIF snapshot service.
+    snapshotAvailable: Boolean(row.snapshotUri || row.rtspUri),
     streamCodec: row.streamCodec || null,
     streamWidth: row.streamWidth ?? null,
     streamHeight: row.streamHeight ?? null,

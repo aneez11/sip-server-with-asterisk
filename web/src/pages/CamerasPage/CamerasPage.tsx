@@ -623,8 +623,11 @@ function CameraPreviewPanel({ camera }: { camera: CameraView }) {
     let stopPoll: (() => void) | null = null;
 
     const run = async () => {
-      const isH264 = (camera.streamCodec ?? '').toLowerCase() === 'h264';
-      if (isH264 && videoRef.current) {
+      // Always try the gateway first: the API transcodes H.265 to H.264 when
+      // CAMERA_TRANSCODE=auto, so a stored non-H.264 codec does not mean the
+      // browser cannot play it. The API returns a specific error when it
+      // refuses, which we surface before falling back to snapshots.
+      if (videoRef.current) {
         try {
           session = await attachCameraPreview(camera.id, videoRef.current);
           if (cancelled) {
@@ -675,8 +678,10 @@ function CameraPreviewPanel({ camera }: { camera: CameraView }) {
       )}
       {mode === 'snapshot' && (
         <div className="camera-preview-note">
-          <CameraIcon size={13} /> Snapshot preview — this camera streams HEVC, which browsers
-          cannot play over WebRTC.
+          <CameraIcon size={13} />{' '}
+          {error
+            ? `Live video unavailable (${error}) — showing snapshots.`
+            : 'Snapshot preview — this camera streams HEVC, which browsers cannot play over WebRTC.'}
         </div>
       )}
       {mode === 'failed' && (

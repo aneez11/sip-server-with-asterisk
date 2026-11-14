@@ -38,6 +38,7 @@ const upload: Multer = multer({
 export function createEndpointsRouter(
   endpoints: EndpointService,
   camera: CameraService,
+  stream?: CameraStreamService,
 ): Router {
   const router = Router();
 
@@ -80,7 +81,18 @@ export function createEndpointsRouter(
   // Proxied JPEG: the camera's credentials never reach the browser.
   router.get("/:id/camera/snapshot", async (req, res, next) => {
     try {
-      const snap = await camera.snapshotForEndpoint(Number(req.params.id));
+      const endpointId = Number(req.params.id);
+      let snap: { body: Buffer; contentType: string };
+      try {
+        snap = await camera.snapshotForEndpoint(endpointId);
+      } catch (e) {
+        // Cameras without ONVIF GetSnapshotUri (or whose snapshot service
+        // rejects us) still get a frame via go2rtc.
+        if (!stream || !(e instanceof ApiError)) throw e;
+        const cam = await camera.getForEndpoint(endpointId);
+        if (!cam.id) throw e;
+        snap = await stream.frame(cam.id);
+      }
       res.setHeader("Content-Type", snap.contentType);
       res.setHeader("Cache-Control", "no-store");
       res.send(snap.body);
@@ -591,7 +603,16 @@ export function createCamerasRouter(
 
   router.get("/:id/snapshot", async (req, res, next) => {
     try {
-      const snap = await camera.snapshot(Number(req.params.id));
+      const cameraId = Number(req.params.id);
+      let snap: { body: Buffer; contentType: string };
+      try {
+        snap = await camera.snapshot(cameraId);
+      } catch (e) {
+        // Cameras without ONVIF GetSnapshotUri (or whose snapshot service
+        // rejects us) still get a frame via go2rtc.
+        if (!(e instanceof ApiError)) throw e;
+        snap = await stream.frame(cameraId);
+      }
       res.setHeader("Content-Type", snap.contentType);
       res.setHeader("Cache-Control", "no-store");
       res.send(snap.body);

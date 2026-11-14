@@ -340,7 +340,10 @@ async function main() {
   });
 
   // Routes
-  app.use("/api/endpoints", createEndpointsRouter(endpointService, cameraService));
+  app.use(
+    "/api/endpoints",
+    createEndpointsRouter(endpointService, cameraService, cameraStream),
+  );
   app.use("/api/zones", createZonesRouter());
   app.use("/api/profiles", createProfilesRouter());
   app.use("/api/announcements", createAnnouncementsRouter(announcementService));

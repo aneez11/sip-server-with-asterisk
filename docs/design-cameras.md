@@ -286,3 +286,19 @@ capped to online cameras and Delete asks for confirmation.
 Status auto-refresh: every 60 s, and only while the page is visible. Card
 snapshots poll only while the card intersects the viewport (IntersectionObserver,
 5 s interval), so a long fleet does not keep every camera awake.
+
+**Preview codec gate (fixed).** The Cameras page used to skip WebRTC unless the
+stored codec was exactly `h264`, so an H.265 camera with transcoding enabled (or
+one that had not been probed yet) showed "Preview unavailable for this camera."
+The page now always attempts WHEP and lets the API decide: passthrough for
+H.264, `ffmpeg:…#video=h264` when `CAMERA_TRANSCODE=auto`, and a specific 422
+message when transcode is `never`. The dialog shows the API error before falling
+back to snapshots.
+
+**Snapshot fallback without GetSnapshotUri.** Some cameras do not implement the
+optional ONVIF snapshot service. `/api/cameras/:id/snapshot` (and the endpoint
+adapter) now falls back to go2rtc's `/api/frame.jpeg`, registering the stream on
+first use and deleting it after a minute without frame requests. A live WHEP
+session cancels that idle teardown. `snapshotAvailable` is true when the camera
+has either a snapshot URI or an RTSP URI.
+

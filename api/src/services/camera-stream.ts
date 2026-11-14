@@ -28,11 +28,36 @@ export class CameraStreamService {
     string,
     { cameraId: number; talkId?: string; endpointId?: number; exp: number }
   >();
+  /** Streams the gateway currently knows about (avoids re-opening on every frame). */
+  private readonly registered = new Set<string>();
+  /** Streams serving an active WHEP peer; never idle-torn-down. */
+  private readonly whepStreams = new Set<string>();
+  private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly camera: CameraService) {}
 
   private static streamName(cameraId: number): string {
     return `cam-${cameraId}`;
+  }
+
+  /**
+   * Gateway source for a camera. H.264 is passed through untouched; anything
+   * else is transcoded when the deployment allows it, and refused otherwise.
+   */
+  private static sourceFor(cam: { uri: string; codec: string }): {
+    src: string;
+    transcode: boolean;
+    codec: string;
+  } {
+    const codec = (cam.codec || "").toLowerCase();
+    if (codec === "" || codec === "h264" || codec === "avc1")
+      return { src: cam.uri, transcode: false, codec };
+    if (config.camera.transcode !== "auto")
+      throw new ApiError(
+        422,
+        `Camera streams ${codec.toUpperCase()} — switch it to H.264 to preview`,
+      );
+    return { src: `ffmpeg:${cam.uri}#video=h264`, transcode: true, codec };
   }
 
   /** Talk path: validate the talk targets this endpoint and mint a token. */
@@ -158,19 +183,12 @@ export class CameraStreamService {
     const cam = await this.camera.rtspUriFor(cameraId);
     if (!cam || !cam.enabled) throw new ApiError(404, "Camera is not enabled");
 
-    const codec = (cam.codec || "").toLowerCase();
-    const needsTranscode =
-      config.camera.transcode === "auto" && codec !== "" && codec !== "h264" && codec !== "avc1";
-    if (!needsTranscode && config.camera.transcode === "never" && codec !== "" && codec !== "h264") {
-      throw new ApiError(422, `Camera streams ${codec.toUpperCase()} — switch it to H.264 to preview`);
-    }
-
     const name = CameraStreamService.streamName(cameraId);
-    const src = needsTranscode ? `ffmpeg:${cam.uri}#video=h264` : cam.uri;
-    await this.register(name, src);
-    if (needsTranscode)
-      console.log(`[camera] transcoding ${codec} -> h264 camera=${cameraId}`);
-
+    const source = CameraStreamService.sourceFor(cam);
+    await this.register(name, source.src);
+    this.whepStreams.add(name);
+    if (source.transcode)
+      console.log(`[camera] transcoding ${source.codec} -> h264 camera=${cameraId}`);
     const url = `${config.camera.gatewayUrl}/api/webrtc?src=${encodeURIComponent(name)}`;
     console.log(`[camera] whep camera=${cameraId} stream=${name} offer=${offer.length}B`);
     const res = await fetch(url, {
@@ -190,6 +208,62 @@ export class CameraStreamService {
     return { body, contentType: res.headers.get("content-type") ?? "application/sdp" };
   }
 
+  /**
+   * One JPEG frame through the gateway. Some cameras do not implement ONVIF
+   * `GetSnapshotUri`; this keeps the snapshot fallback working for them.
+   *
+   * The gateway stream is registered once and dropped after a minute without
+   * frame requests. A WHEP preview cancels that teardown because the peer
+   * connection keeps the producer busy.
+   */
+  async frame(cameraId: number): Promise<{ body: Buffer; contentType: string }> {
+    const cam = await this.camera.rtspUriFor(cameraId);
+    if (!cam || !cam.enabled) throw new ApiError(404, "Camera is not enabled");
+
+    const name = CameraStreamService.streamName(cameraId);
+    const source = CameraStreamService.sourceFor(cam);
+    await this.ensureRegistered(name, source.src);
+
+    // A freshly registered producer may need a moment before it has a frame.
+    const grab = async (): Promise<Awaited<ReturnType<typeof fetch>>> =>
+      fetch(`${config.camera.gatewayUrl}/api/frame.jpeg?src=${encodeURIComponent(name)}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+    let res = await grab();
+    if (!res.ok && res.status >= 500) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      res = await grab();
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.warn(`[camera] frame failed camera=${cameraId} status=${res.status}`);
+      throw new ApiError(502, `Camera snapshot failed (HTTP ${res.status})`, {
+        gateway: [detail.slice(0, 200)],
+      });
+    }
+    if (!this.whepStreams.has(name)) this.scheduleIdleTeardown(name);
+    return {
+      body: Buffer.from(await res.arrayBuffer()),
+      contentType: res.headers.get("content-type") ?? "image/jpeg",
+    };
+  }
+
+  private async ensureRegistered(name: string, src: string): Promise<void> {
+    if (this.registered.has(name)) return;
+    await this.register(name, src);
+  }
+
+  private scheduleIdleTeardown(name: string): void {
+    const current = this.idleTimers.get(name);
+    if (current) clearTimeout(current);
+    const timer = setTimeout(() => {
+      this.idleTimers.delete(name);
+      void this.unregister(name);
+    }, 60_000);
+    timer.unref?.();
+    this.idleTimers.set(name, timer);
+  }
+
   /** Register (or replace) the gateway stream for a camera. */
   private async register(name: string, src: string): Promise<void> {
     // Drop a stale producer first so an old camera session cannot linger.
@@ -203,9 +277,15 @@ export class CameraStreamService {
         gateway: [detail.slice(0, 200)],
       });
     }
+    this.registered.add(name);
   }
 
   private async unregister(name: string): Promise<void> {
+    const timer = this.idleTimers.get(name);
+    if (timer) clearTimeout(timer);
+    this.idleTimers.delete(name);
+    this.registered.delete(name);
+    this.whepStreams.delete(name);
     try {
       await fetch(`${config.camera.gatewayUrl}/api/streams?src=${encodeURIComponent(name)}`, {
         method: "DELETE",
