@@ -570,6 +570,16 @@ export function createCamerasRouter(
     }
   });
 
+  /** Probe an unsaved camera from the Add dialog (no record yet). */
+  router.post("/test", async (req, res, next) => {
+    try {
+      const body = cameraTestSchema.parse(req.body ?? {});
+      res.json(await camera.test(undefined, body));
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.post("/:id/test", async (req, res, next) => {
     try {
       const body = cameraTestSchema.parse(req.body ?? {});

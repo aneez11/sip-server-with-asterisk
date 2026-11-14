@@ -52,7 +52,8 @@
 
 .pwa-install {
   position: fixed;
-  right: 14px;
+  left: 92px;
+  right: auto;
   bottom: calc(58px + env(safe-area-inset-bottom, 0px));
   z-index: 90;
   min-height: 40px;
@@ -82,6 +83,7 @@
   }
 
   .pwa-install {
+    left: 12px;
     bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   }
 }

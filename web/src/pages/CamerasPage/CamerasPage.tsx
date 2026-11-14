@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera as CameraIcon,
   Loader2,
@@ -60,6 +60,7 @@ export const CamerasPage = () => {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [editing, setEditing] = useState<CameraView | null>(null);
   const [creating, setCreating] = useState(false);
+  const draftIdRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<CameraView | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
@@ -110,6 +111,60 @@ export const CamerasPage = () => {
     label: e.label,
     extension: e.extension,
   }));
+
+  const openCreate = () => {
+    draftIdRef.current = null;
+    setCreating(true);
+  };
+
+  /**
+   * Add dialog transport: create the record on first save, then save the full
+   * config against it. Test probes unsaved values, so nothing is written unless
+   * the operator saves.
+   */
+  const createTransport: CameraFormTransport = {
+    load: async () => ({
+      id: 0,
+      name: '',
+      location: '',
+      endpointId: null,
+      endpointLabel: null,
+      enabled: false,
+      configured: false,
+      reachable: null,
+      host: null,
+      port: 80,
+      username: null,
+      hasPassword: false,
+      channel: 1,
+      preferredStream: 'sub',
+      profileToken: '',
+      profileName: '',
+      streamUri: null,
+      snapshotAvailable: false,
+      streamCodec: null,
+      streamWidth: null,
+      streamHeight: null,
+      lastCheckAt: null,
+      lastCheckError: null,
+      profiles: [],
+    }),
+    save: async (body) => {
+      let id = draftIdRef.current;
+      if (id == null) {
+        const created = await api.cameras.create({
+          name: (body.name ?? '').trim() || body.host || 'Camera',
+          location: body.location ?? '',
+          endpointId: body.endpointId ?? null,
+        });
+        id = created.id;
+        draftIdRef.current = id;
+      }
+      return api.cameras.save(id, body);
+    },
+    test: (cfg) => api.cameras.testNew(cfg),
+    snapshotUrl: null,
+  };
 
   const transportFor = (id: number): CameraFormTransport => ({
     load: () => api.cameras.get(id),
@@ -206,7 +261,7 @@ export const CamerasPage = () => {
             <Button variant="outline" size="sm" onClick={() => setDiscoverOpen(true)}>
               <Radar size={13} /> Discover
             </Button>
-            <Button size="sm" onClick={() => setCreating(true)}>
+            <Button size="sm" onClick={openCreate}>
               <Plus size={13} /> Add camera
             </Button>
           </>
@@ -280,23 +335,35 @@ export const CamerasPage = () => {
         </div>
       )}
 
-      {/* Create */}
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent>
+      {/* Create: same fields as Edit, record is created on save. */}
+      <Dialog
+        open={creating}
+        onOpenChange={(open) => {
+          if (!open) setCreating(false);
+        }}
+      >
+        <DialogContent className="dialog-wide">
           <DialogHeader>
             <DialogTitle>Add camera</DialogTitle>
             <DialogDescription>
-              Name it now; host, credentials and streams are configured on the card
-              afterwards.
+              Probe with Test before saving. A linked camera also appears during a
+              two-way call to that endpoint.
             </DialogDescription>
           </DialogHeader>
-          <CreateCameraForm
+          <CameraForm
+            transport={createTransport}
+            showMeta
             endpoints={endpointOptions}
-            onCreated={async () => {
+            onSaved={() => {
               setCreating(false);
-              await load();
+              void load();
             }}
           />
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -618,79 +685,5 @@ function CameraPreviewPanel({ camera }: { camera: CameraView }) {
         </div>
       )}
     </div>
-  );
-}
-
-function CreateCameraForm({
-  endpoints,
-  onCreated,
-}: {
-  endpoints: { id: number; label: string; extension: string }[];
-  onCreated: () => Promise<void>;
-}) {
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
-  const [endpointId, setEndpointId] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.cameras.create({ name: name.trim(), location, endpointId });
-      await onCreated();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="form-row">
-        <label>Name</label>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Front gate"
-          autoFocus
-        />
-      </div>
-      <div className="form-row">
-        <label>Location</label>
-        <Input
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="Main entrance"
-        />
-      </div>
-      <div className="form-row">
-        <label>Linked endpoint (optional)</label>
-        <select
-          className="input"
-          value={endpointId ?? ''}
-          onChange={(e) => setEndpointId(e.target.value ? Number(e.target.value) : null)}
-        >
-          <option value="">Not linked</option>
-          {endpoints.map((ep) => (
-            <option key={ep.id} value={ep.id}>
-              {ep.label} ({ep.extension})
-            </option>
-          ))}
-        </select>
-      </div>
-      {error && <div className="form-error">{error}</div>}
-      <DialogFooter>
-        <DialogClose asChild>
-          <Button variant="outline">Cancel</Button>
-        </DialogClose>
-        <Button onClick={() => void submit()} disabled={busy || !name.trim()}>
-          {busy ? 'Creating…' : 'Create camera'}
-        </Button>
-      </DialogFooter>
-    </>
   );
 }

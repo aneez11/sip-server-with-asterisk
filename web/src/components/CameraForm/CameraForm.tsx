@@ -29,7 +29,8 @@ export interface CameraFormTransport {
     password?: string;
   }) => Promise<{ ok: boolean; error?: string; codec?: string }>;
   remove?: () => Promise<void>;
-  snapshotUrl: string;
+  /** Null while the camera has not been created yet. */
+  snapshotUrl: string | null;
 }
 
 const EMPTY = {
@@ -307,7 +308,7 @@ export const CameraForm = ({
           <RefreshCw size={13} /> Test
         </Button>
         <Button size="sm" onClick={() => void save()} disabled={busy}>
-          {busy ? "Saving…" : "Save camera"}
+          {busy ? "Saving…" : transport.snapshotUrl === null ? "Add camera" : "Save camera"}
         </Button>
         {transport.remove && (
           <Button size="sm" variant="ghost" onClick={() => void remove()} disabled={busy}>
@@ -335,7 +336,7 @@ export const CameraForm = ({
         </div>
       )}
 
-      {form.host && (
+      {form.host && transport.snapshotUrl && (
         <img
           key={thumb}
           src={`${transport.snapshotUrl}?t=${thumb}`}

@@ -1,7 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { Mic, MonitorSpeaker, PhoneCall, Radio, ShieldAlert, Square, WifiOff } from 'lucide-react';
+import {
+  Mic,
+  MonitorSpeaker,
+  PhoneCall,
+  Radio,
+  ShieldAlert,
+  Square,
+  Users,
+  WifiOff,
+} from 'lucide-react';
 import { useStore } from '@/store';
 import { Button } from '@/components/Button/Button';
+import { Card } from '@/components/Card/Card';
 import { CameraPreview } from '@/components/CameraPreview/CameraPreview';
 import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
 import { suggestedHttpsOrigin } from '@/lib/mic';
@@ -22,11 +32,15 @@ export const LiveTalkPage = () => {
   const busy = useStore((s) => s.busy);
   const startLiveTalk = useStore((s) => s.startLiveTalk);
   const stopLiveTalk = useStore((s) => s.stopLiveTalk);
+  const setContextOpen = useStore((s) => s.setContextOpen);
 
   const meterRefs = useRef<Array<HTMLSpanElement | null>>([]);
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recording) {
+      meterRefs.current.forEach((bar) => bar?.classList.remove('lit'));
+      return;
+    }
     let frame = 0;
     const loop = () => {
       const level = useStore.getState().talkLevel;
@@ -52,8 +66,25 @@ export const LiveTalkPage = () => {
   const targetCount = new Set([...talkTargetIds, ...groupReceiverIds]).size;
   const groupCount = talkPaGroupIds.size;
 
+  const modeLabel = recording
+    ? twoway
+      ? 'Two-way call'
+      : 'Live broadcast'
+    : 'Ready';
+  const sourceLabel = talkSource === 'device' ? 'Device audio' : 'Microphone';
+
+  const hint = recording
+    ? twoway
+      ? 'Your voice is streamed live to the phone and the phone audio comes back here — a normal call.'
+      : talkSource === 'device'
+        ? 'Device audio is streamed live to the selected targets. Press Stop to end the broadcast.'
+        : 'Your voice is streamed live to the selected endpoints in real time. Press Stop to end the broadcast.'
+    : talkSource === 'device'
+      ? 'Streams audio already playing on this computer (music, a video, another app) to the targets. Pick a tab or screen and enable "Share tab audio" / "Share system audio". This is one-way only.'
+      : 'Your microphone is streamed live while talk is active (not recorded-then-played).';
+
   return (
-    <div className="page-fill" style={{ overflowY: 'auto', paddingRight: 4 }}>
+    <div className="page-scroll">
       <ScreenHeader
         title="Live talk"
         subtitle={
@@ -63,7 +94,7 @@ export const LiveTalkPage = () => {
               : `Live broadcast — ${targetCount} target${targetCount === 1 ? '' : 's'} hearing your mic live${
                   groupCount > 0 ? ` via ${groupCount} PA group${groupCount === 1 ? '' : 's'}` : ''
                 }`
-            : `Pick endpoints or PA groups in the right panel (${onlineCount} registered), then start. One phone = two-way call; multiple endpoints or a PA group = live one-way broadcast.`
+            : `Pick endpoints or PA groups in the targets panel (${onlineCount} registered), then start. One phone = two-way call; multiple endpoints or a PA group = live one-way broadcast.`
         }
       />
 
@@ -91,70 +122,155 @@ export const LiveTalkPage = () => {
         </div>
       )}
 
-      {recording && twowayEndpointId !== null && activeTalkId && (
-        <CameraPreview talkId={activeTalkId} endpointId={twowayEndpointId} endpointLabel={twowayEndpointLabel} />
-      )}
+      <div className="talk-layout">
+        <div className="talk-main">
+          <section className={`talk-console${recording ? ' live' : ''}`}>
+            <div className="talk-console-head">
+              <span className={`chip ${recording ? 'bad' : 'quiet'}`}>
+                {recording && <i className="dot" aria-hidden="true" />}
+                {modeLabel}
+              </span>
+              <span className="talk-console-count">
+                <Users size={12} />
+                {targetCount} target{targetCount === 1 ? '' : 's'}
+              </span>
+            </div>
 
-      <div className="talk-stage">
-        {!recording && (
-          <div className="source-toggle">
-            <button
-              type="button"
-              className={talkSource === 'mic' ? 'on' : ''}
-              onClick={() => setTalkSource('mic')}
-            >
-              <Mic size={13} /> Microphone
-            </button>
-            <button
-              type="button"
-              className={talkSource === 'device' ? 'on' : ''}
-              onClick={() => setTalkSource('device')}
-            >
-              <MonitorSpeaker size={13} /> Device audio
-            </button>
-          </div>
-        )}
+            <div className="talk-orb" aria-hidden="true">
+              {recording ? (
+                <Radio size={34} />
+              ) : talkSource === 'device' ? (
+                <MonitorSpeaker size={34} />
+              ) : (
+                <Mic size={34} />
+              )}
+            </div>
 
-        <div className="level-meter" aria-hidden="true">
-          {Array.from({ length: METER_BARS }).map((_, i) => (
-            <span
-              key={i}
-              ref={(el) => {
-                meterRefs.current[i] = el;
-              }}
-              style={{ height: `${Math.max(3, ((i + 1) / METER_BARS) * 38)}px` }}
+            <div className="level-meter" aria-hidden="true">
+              {Array.from({ length: METER_BARS }).map((_, i) => (
+                <span
+                  key={i}
+                  ref={(el) => {
+                    meterRefs.current[i] = el;
+                  }}
+                />
+              ))}
+            </div>
+
+            {!recording && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="talk-select-targets"
+                onClick={() => setContextOpen(true)}
+              >
+                <Users size={13} />
+                {targetCount === 0 ? 'Select targets' : `Change targets (${targetCount})`}
+              </Button>
+            )}
+
+            {!recording && (
+              <div className="source-toggle">
+                <button
+                  type="button"
+                  className={talkSource === 'mic' ? 'on' : ''}
+                  onClick={() => setTalkSource('mic')}
+                >
+                  <Mic size={13} /> Microphone
+                </button>
+                <button
+                  type="button"
+                  className={talkSource === 'device' ? 'on' : ''}
+                  onClick={() => setTalkSource('device')}
+                >
+                  <MonitorSpeaker size={13} /> Device audio
+                </button>
+              </div>
+            )}
+
+            {recording ? (
+              <Button
+                variant="destructive"
+                size="lg"
+                className="talk-action"
+                onClick={() => void stopLiveTalk()}
+                disabled={busy}
+              >
+                <Square size={15} /> Stop talk
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className="talk-action"
+                onClick={() => void startLiveTalk()}
+                disabled={busy}
+              >
+                {talkSource === 'device' ? (
+                  <MonitorSpeaker size={16} />
+                ) : twoway ? (
+                  <PhoneCall size={16} />
+                ) : (
+                  <Radio size={16} />
+                )}
+                {talkSource === 'device' ? 'Share device audio' : 'Start talk'}
+              </Button>
+            )}
+
+            <p className="note talk-hint">{hint}</p>
+          </section>
+
+          {recording && twowayEndpointId !== null && activeTalkId && (
+            <CameraPreview
+              talkId={activeTalkId}
+              endpointId={twowayEndpointId}
+              endpointLabel={twowayEndpointLabel}
             />
-          ))}
+          )}
         </div>
 
-        {recording ? (
-          <Button variant="destructive" size="lg" style={{ minWidth: 190 }} onClick={() => void stopLiveTalk()} disabled={busy}>
-            <Square size={15} /> Stop talk
-          </Button>
-        ) : (
-          <Button size="lg" style={{ minWidth: 190 }} onClick={() => void startLiveTalk()} disabled={busy}>
-            {talkSource === 'device' ? (
-              <MonitorSpeaker size={16} />
-            ) : twoway ? (
-              <PhoneCall size={16} />
-            ) : (
-              <Radio size={16} />
+        <aside className="talk-side">
+          <Card>
+            <div className="card-title">Session</div>
+            <div className="meta-row">
+              <span>Mode</span>
+              <strong>{modeLabel}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Targets</span>
+              <strong>{targetCount}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Online</span>
+              <strong className="ok-text">{onlineCount}</strong>
+            </div>
+            <div className="meta-row">
+              <span>Source</span>
+              <strong>{sourceLabel}</strong>
+            </div>
+            {groupCount > 0 && (
+              <div className="meta-row">
+                <span>PA groups</span>
+                <strong>{groupCount}</strong>
+              </div>
             )}
-            {talkSource === 'device' ? 'Share device audio' : 'Start talk'}
-          </Button>
-        )}
+          </Card>
 
-        <p className="note" style={{ textAlign: 'center', maxWidth: 520, margin: 0 }}>
-          {recording
-            ? twoway
-              ? 'Your voice is streamed live to the phone and the phone audio comes back here — a normal call.'
-              : talkSource === 'device'
-                ? 'Device audio is streamed live to the selected targets. Press Stop to end the broadcast.'
-                : 'Your voice is streamed live to the selected endpoints in real time. Press Stop to end the broadcast.'
-            : talkSource === 'device'
-              ? 'Streams audio already playing on this computer (music, a video, another app) to the targets. Pick a tab or screen and enable "Share tab audio" / "Share system audio". This is one-way only.'
-              : 'Your microphone is streamed live while talk is active (not recorded-then-played).'}
-        </p>
+          <Card className="talk-help">
+            <div className="card-title">How it works</div>
+            <ol>
+              <li>
+                Pick <b>endpoints</b> or <b>PA groups</b> in the targets panel.
+              </li>
+              <li>
+                One phone and nothing else starts a <b>two-way call</b>. Anything else is a live one-way
+                broadcast.
+              </li>
+              <li>
+                Press <b>Start</b>, speak, then <b>Stop</b>. Audio is live — there is no recording step.
+              </li>
+            </ol>
+          </Card>
+        </aside>
       </div>
     </div>
   );

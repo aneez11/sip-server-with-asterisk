@@ -33,6 +33,8 @@ interface StoreState {
   /** Whether the API is connected to Asterisk's AMI. */
   amiConnected: boolean;
   activeTab: Tab;
+  /** Mobile context drawer (targets/details); ignored on wide screens. */
+  contextOpen: boolean;
   /** Live active calls snapshot (Monitor dashboard). */
   calls: CallsSnapshot | null;
   selectedZoneIds: Set<number>;
@@ -67,6 +69,7 @@ interface StoreState {
   endCallMonitor: (callId: string) => Promise<void>;
   addToast: (msg: string, kind?: "success" | "error") => void;
   setActiveTab: (t: Tab) => void;
+  setContextOpen: (open: boolean) => void;
   toggleZone: (id: number) => void;
   setTalkTargets: (ids: number[]) => void;
   toggleTalkTarget: (id: number) => void;
@@ -236,6 +239,7 @@ export const useStore = create<StoreState>((set, get) => {
     lastSync: null,
     amiConnected: true,
     activeTab: "broadcast",
+    contextOpen: false,
     calls: null,
     selectedZoneIds: new Set(),
     recording: false,
@@ -296,7 +300,8 @@ export const useStore = create<StoreState>((set, get) => {
     },
     addToast,
 
-    setActiveTab: (t) => set({ activeTab: t }),
+    setActiveTab: (t) => set({ activeTab: t, contextOpen: false }),
+    setContextOpen: (open) => set({ contextOpen: open }),
     toggleZone: (id) =>
       set((s) => {
         const z = new Set(s.selectedZoneIds);

@@ -39,11 +39,8 @@ export const App = () => {
   const init = useStore((s) => s.init);
   const refresh = useStore((s) => s.refresh);
   const activeTab = useStore((s) => s.activeTab);
-  const [contextOpen, setContextOpen] = useState(false);
-
-  useEffect(() => {
-    setContextOpen(false);
-  }, [activeTab]);
+  const contextOpen = useStore((s) => s.contextOpen);
+  const setContextOpen = useStore((s) => s.setContextOpen);
 
   useEffect(() => {
     if (!contextOpen) return;
@@ -116,7 +113,7 @@ export const App = () => {
       <Topbar
         showContext={showContext}
         contextOpen={contextOpen}
-        onToggleContext={() => setContextOpen((v) => !v)}
+        onToggleContext={() => setContextOpen(!contextOpen)}
       />
       <IconRail />
       <main className="workspace" id="workspace" tabIndex={-1}>

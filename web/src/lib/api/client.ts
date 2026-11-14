@@ -342,6 +342,17 @@ export const api = {
       }),
     remove: (id: number) =>
       request<void>(`/api/cameras/${id}`, { method: "DELETE" }),
+    /** Probe unsaved values before the camera record exists. */
+    testNew: (cfg: {
+      host: string;
+      port: number;
+      username: string;
+      password?: string;
+    }) =>
+      request<{ ok: boolean; error?: string; codec?: string }>("/api/cameras/test", {
+        method: "POST",
+        body: JSON.stringify(cfg),
+      }),
     test: (
       id: number,
       cfg?: { host: string; port: number; username: string; password?: string },
