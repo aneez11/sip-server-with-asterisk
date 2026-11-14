@@ -102,13 +102,14 @@ def run(base_url: str, headed: bool):
             browser.close()
             return 1
 
-        table_ok = (
-            page.get_by_role("columnheader", name="Extension").count() > 0
-            and page.get_by_role("columnheader", name="IP").count() > 0
-            and page.get_by_role("columnheader", name="SIP Password").count() > 0
-            and page.get_by_role("columnheader", name="Active").count() > 0
+        cards_ok = (
+            page.get_by_placeholder("Search by label, extension, location, IP or model").count() > 0
+            and (
+                page.locator(".endpoint-card").count() > 0
+                or page.get_by_text("No endpoints yet").count() > 0
+            )
         )
-        report("endpoints rendered as table with IP column", table_ok)
+        report("endpoints rendered as filterable cards", cards_ok)
         shot(page, "03-endpoints")
 
         # ---- 4. Create endpoint -> table row with password copy -----------
@@ -130,9 +131,9 @@ def run(base_url: str, headed: bool):
             page.get_by_role("button", name="Cancel").click(timeout=3000)
             page.wait_for_timeout(500)
 
-        row = page.locator("main").locator("tr", has_text=label)
-        report("endpoint row created", row.count() > 0, ext)
-        report("password row with copy on table row", "SIP password:" in row.first.inner_text(), row.first.inner_text().replace("\n", " | ")[:110])
+        row = page.locator("main .endpoint-card", has_text=label)
+        report("endpoint card created", row.count() > 0, ext)
+        report("endpoint card shows status", "Online" in row.first.inner_text() or "Offline" in row.first.inner_text(), row.first.inner_text().replace("\n", " | ")[:110])
 
         # ---- 5. Duplicate extension -> clean JSON toast (dialog stays open)
         page.get_by_role("button", name="Add endpoint").click()

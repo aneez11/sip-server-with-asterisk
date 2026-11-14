@@ -31,12 +31,10 @@ services:
       CAMERA_SECRET: ${CAMERA_SECRET:?CAMERA_SECRET is required in .env}
       CAMERA_GATEWAY_URL: http://go2rtc:1984
     ports:
-      # Loopback stays available for host-side health checks/dev tools; HOST_IP
-      # adds the LAN interface so other devices can open http://<host-ip>:3001.
-      - "127.0.0.1:3001:3001"
-      - "${HOST_IP}:3001:3001"
-      - "127.0.0.1:${HTTPS_PORT:-3443}:${HTTPS_PORT:-3443}"
-      - "${HOST_IP}:${HTTPS_PORT:-3443}:${HTTPS_PORT:-3443}"
+      # Bind all interfaces by default so the console is reachable over the LAN
+      # and over Tailscale/VPN. Set API_BIND=127.0.0.1 in .env to restrict it.
+      - "${API_BIND:-0.0.0.0}:3001:3001"
+      - "${API_BIND:-0.0.0.0}:${HTTPS_PORT:-3443}:${HTTPS_PORT:-3443}"
     volumes:
       - ./asterisk-config:/etc/asterisk
       - ./announcements:/announcements
