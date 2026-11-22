@@ -47,11 +47,19 @@ export async function attachCameraPreview(
   return attachWithToken(token, video);
 }
 
-/** Shared WHEP negotiation for talk-bound and preview tokens. */
+/**
+ * Shared WHEP negotiation for talk-bound and preview tokens.
+ *
+ * Resolves only after the element has actually painted a frame. A WHEP answer
+ * with no media (ICE blocked, gateway not publishing yet, camera slow to start)
+ * used to resolve immediately, leaving the caller on a permanently black
+ * <video>; now that case rejects so the caller can fall back to snapshots.
+ */
 async function attachWithToken(
   token: string,
   video: HTMLVideoElement,
   onStop?: () => void,
+  firstFrameTimeoutMs = 8000,
 ): Promise<CameraSession> {
   const pc = new RTCPeerConnection({ iceServers: [] });
   const stop = () => {
@@ -65,6 +73,9 @@ async function attachWithToken(
     onStop?.();
   };
 
+  // Holder object rather than a `let`: assignments happen inside the promise
+  // executor below, and TS does not widen a captured variable from closures.
+  const firstFrameCtl: { cancel?: () => void } = {};
   try {
     // Video only: the operator hears the phone, not the camera.
     pc.addTransceiver("video", { direction: "recvonly" });
@@ -82,17 +93,66 @@ async function attachWithToken(
       body: pc.localDescription?.sdp ?? offer.sdp ?? "",
       credentials: "same-origin",
     });
-    if (!res.ok) throw new Error(`Camera stream failed (HTTP ${res.status})`);
-    const answer = await res.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answer });
-
+    // `ontrack` MUST be attached before the remote answer is applied. Tracks
+    // from a recvonly transceiver arrive during setRemoteDescription, and a
+    // handler installed afterwards is never invoked for them — the peer
+    // connects, the SDP is accepted, and the <video> stays black forever.
     pc.ontrack = (ev) => {
-      video.srcObject = ev.streams[0] ?? new MediaStream([ev.track]);
+      const stream = ev.streams[0] ?? new MediaStream([ev.track]);
+      video.srcObject = stream;
       void video.play().catch(() => undefined);
     };
 
+    if (!res.ok) throw new Error(`Camera stream failed (HTTP ${res.status})`);
+    const answer = await res.text();
+
+    const firstFrame = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        firstFrameCtl.cancel = undefined;
+        clearTimeout(timer);
+        pc.removeEventListener("iceconnectionstatechange", onIce);
+        video.removeEventListener("loadedmetadata", onReady);
+        video.removeEventListener("playing", onReady);
+        if (err) reject(err);
+        else resolve();
+      };
+      const timer = setTimeout(
+        () => finish(new Error("Camera sent no video within 8s")),
+        firstFrameTimeoutMs,
+      );
+      // ICE failing is the common cause (8555/UDP unreachable from the browser)
+      // and surfaces long before the frame timeout would.
+      const onIce = () => {
+        if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+          finish(new Error(`Camera media connection ${pc.iceConnectionState}`));
+        }
+      };
+      pc.addEventListener("iceconnectionstatechange", onIce);
+      firstFrameCtl.cancel = () => finish(new Error("cancelled"));
+
+      // `loadedmetadata` with a non-zero width means a decodable frame exists;
+      // requestVideoFrameCallback is the precise signal where supported.
+      const still = video as HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      };
+      const onReady = () => {
+        if (video.videoWidth > 0) finish();
+      };
+      video.addEventListener("loadedmetadata", onReady);
+      video.addEventListener("playing", onReady);
+      if (typeof still.requestVideoFrameCallback === "function") {
+        still.requestVideoFrameCallback(() => finish());
+      }
+    });
+
+    await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    await firstFrame;
     return { video, stop };
   } catch (e) {
+    firstFrameCtl.cancel?.();
     stop();
     throw e;
   }

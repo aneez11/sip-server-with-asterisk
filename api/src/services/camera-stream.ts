@@ -43,6 +43,11 @@ export class CameraStreamService {
   /**
    * Gateway source for a camera. H.264 is passed through untouched; anything
    * else is transcoded when the deployment allows it, and refused otherwise.
+   *
+   * The gateway's own `ffmpeg:` producer is the only form its runtime API
+   * accepts — an explicit `exec:` command is refused with
+   * "source from insecure producer" (exec sources are config-file-only), so the
+   * transcode has to go through `ffmpeg:{uri}#video=h264`.
    */
   private static sourceFor(cam: { uri: string; codec: string }): {
     src: string;
