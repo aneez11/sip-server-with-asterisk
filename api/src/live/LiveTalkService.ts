@@ -208,6 +208,7 @@ export class LiveTalkService {
         status: "pending",
         endpointIds: resolvedIds,
         title,
+        source: "talk",
         startedAt: new Date(),
       },
     });

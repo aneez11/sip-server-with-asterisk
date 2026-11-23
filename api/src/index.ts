@@ -42,6 +42,8 @@ import { MonitorService } from "./live/monitor.js";
 import { PaGroupService } from "./services/pa-groups.js";
 import { CameraService } from "./services/camera.js";
 import { CameraStreamService } from "./services/camera-stream.js";
+import { BellService } from "./services/bells.js";
+import { createBellsRouter } from "./routes/bells.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -277,6 +279,13 @@ async function main() {
   // Any talk stop (user, socket grace expiry, capture ended) closes its camera.
   liveTalk.setStopHook((talkId) => cameraStream.stop(talkId));
 
+  // Scheduled bells run on the API's clock and fire through the same paging path
+  // as a manual broadcast. Ship dark: no bells means no behavior change.
+  const bellService = new BellService(broadcastService, io);
+  listener.setLogFinalizedHandler((logId, status) => {
+    void bellService.onLogFinalized(logId, status);
+  });
+
   // Wire the PA initiator-leave hook: when the initiator hangs up, replay pa_end
   // to the receivers then tear the conference down.
   listener.setPaInitiatorLeftHandler(
@@ -360,6 +369,7 @@ async function main() {
     createPaTriggerRouter(paGroupService, config.paTriggerSecret),
   );
   app.use("/api/media", createMediaRouter(announcementService));
+  app.use("/api/bells", createBellsRouter(bellService));
 
   // Liveness endpoint (unauthenticated; outside /api so it bypasses session
   // auth). Docker's healthcheck calls this. It only answers while the event
@@ -401,7 +411,6 @@ async function main() {
 
   // Static web (built SPA)
   const webDist = path.resolve(config.webDist);
-
   // Publish the local root CA so devices can trust the HTTPS listener once
   // (install ca.pem) instead of clicking through the warning on every browser.
   app.get("/ca.pem", (_req, res) => {
@@ -478,10 +487,28 @@ async function main() {
     res.sendFile(path.join(webDist, "index.html"));
   });
 
+  // ---- scheduled bells boot sequence -------------------------------------
+  // Order matters: seed the built-in chimes (so a fresh install has audio), then
+  // reconcile rows that came due while the process was down, then refill the
+  // materialized horizon, then start ticking. Nothing here touches Asterisk.
+  void (async () => {
+    try {
+      await bellService.seedChimes();
+      await bellService.reconcileOnBoot();
+      await bellService.materialize();
+      bellService.start();
+    } catch (err) {
+      console.warn("[bell] startup sequence failed:", (err as Error).message);
+    }
+  })();
+
+  const shutdownBells = () => bellService.stop();
+  process.on("SIGTERM", shutdownBells);
+  process.on("SIGINT", shutdownBells);
+
   httpServer.listen(config.port, () => {
     console.log(`Infinity Echo API running on port ${config.port}`);
   });
-
   if (httpsServer) {
     httpsServer.listen(config.tls.port, () => {
       console.log(

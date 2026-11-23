@@ -31,6 +31,7 @@ model Endpoint {
   paGroupsAsReceiver  PaGroupReceiver[]
   camera              EndpointCamera?
   cameraRecord        Camera?           @relation("EndpointCameraLink")
+  bellTargets         BellEndpoint[]
 }
 
 // A camera is a first-class record: it may exist on its own (corridor, gate)
@@ -109,6 +110,7 @@ model Zone {
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   members             ZoneMember[]
+  bells               BellZone[]
 }
 
 model AutoAnswerProfile {
@@ -140,6 +142,9 @@ model BroadcastLog {
   endpointIds Json
   title       String    @default("")
   durationSec Float? // expected playback length (from the announcement)
+  // manual | bell | music | talk | pa — lets History badge autonomous pages
+  // without joining the bell ledger.
+  source      String    @default("manual")
   startedAt   DateTime?
   endedAt     DateTime?
   createdAt   DateTime  @default(now())
@@ -159,6 +164,7 @@ model Announcement {
   createdAt       DateTime  @default(now())
   paGroupsAsStart PaGroup[] @relation("PaStart")
   paGroupsAsEnd   PaGroup[] @relation("PaEnd")
+  bells           Bell[]    @relation("BellAudio")
 }
 
 model EndpointCodecLog {
@@ -203,6 +209,124 @@ model PaGroupReceiver {
   endpoint   Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 
   @@id([groupId, endpointId])
+}
+
+// ---- scheduled bells (school chimes / shift bells) -------------------------
+// Every schedule field is a WALL-CLOCK string interpreted in BELL_TIMEZONE.
+// Only BellOccurrence.scheduledAt is a derived UTC instant (ordering + dispatch
+// queries); storing "07:45" as a timestamp is how chimes end up an hour off.
+
+model Bell {
+  id             Int       @id @default(autoincrement())
+  name           String    @default("")
+  timeOfDay      String // "HH:MM" local, minute granularity
+  // CSV of ISO weekdays 1=Mon .. 7=Sun, e.g. "1,2,3,4,5".
+  daysOfWeek     String    @default("1,2,3,4,5")
+  // Term window, inclusive, local "YYYY-MM-DD" strings ("" = unbounded).
+  dateFrom       String    @default("")
+  dateTo         String    @default("")
+  enabled        Boolean   @default(true)
+  announcementId Int?
+  announcement   Announcement? @relation("BellAudio", fields: [announcementId], references: [id], onDelete: SetNull)
+  // A bell's clip is its attention sound; its own beep/volume apply instead of
+  // the zone's operator-broadcast settings.
+  beep           Boolean   @default(false)
+  volume         Int? // 0-100, pushed as PVOL on member legs
+  templateId     Int? // Phase 3 (null = always-on set)
+  template       BellTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  zones       BellZone[]
+  endpoints   BellEndpoint[]
+  occurrences BellOccurrence[]
+  skips       BellSkip[]
+
+  @@index([enabled])
+  @@index([timeOfDay])
+}
+
+model BellZone {
+  bellId Int
+  zoneId Int
+  bell   Bell @relation(fields: [bellId], references: [id], onDelete: Cascade)
+  zone   Zone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@id([bellId, zoneId])
+}
+
+model BellEndpoint {
+  bellId     Int
+  endpointId Int
+  bell       Bell     @relation(fields: [bellId], references: [id], onDelete: Cascade)
+  endpoint   Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@id([bellId, endpointId])
+}
+
+// Materialized occurrence. The unique key rings a bell exactly once per local
+// minute — including across a DST fall-back hour where the local minute repeats.
+model BellOccurrence {
+  id            Int      @id @default(autoincrement())
+  bellId        Int
+  bell          Bell     @relation(fields: [bellId], references: [id], onDelete: Cascade)
+  scheduledAt   DateTime // UTC instant of the local wall clock
+  localDate     String // "2026-11-22" (BELL_TIMEZONE)
+  localMinute   String // "07:45"
+  // scheduled | firing | fired | skipped | missed | failed
+  status        String   @default("scheduled")
+  reason        String   @default("") // "paused" | "dst" | "holiday" | "busy" | error
+  resultStatus  String   @default("") // success | partial | failed (from the log)
+  broadcastLogId Int?    @unique
+  claimedAt     DateTime?
+  firedAt       DateTime?
+  createdAt     DateTime @default(now())
+
+  @@unique([bellId, localDate, localMinute])
+  @@index([status, scheduledAt])
+  @@index([scheduledAt])
+}
+
+// Date-level exceptions. bellId null = every bell (holiday / vacation day).
+model BellSkip {
+  id     Int    @id @default(autoincrement())
+  date   String // local "YYYY-MM-DD"
+  bellId Int?
+  bell   Bell?  @relation(fields: [bellId], references: [id], onDelete: Cascade)
+  reason String @default("")
+
+  @@unique([date, bellId])
+  @@index([date])
+}
+
+// Phase 3: a named set of bells (Regular day / Half day / Exam day). Exactly one
+// template is active; per-date overrides switch a single day's set.
+model BellTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bells     Bell[]
+  overrides BellTemplateOverride[]
+}
+
+model BellTemplateOverride {
+  id         Int          @id @default(autoincrement())
+  date       String // local "YYYY-MM-DD"
+  templateId Int
+  template   BellTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([date])
+}
+
+// Singleton (id = 1): the pause switch is site state and must survive restarts.
+model BellSetting {
+  id        Int      @id @default(1)
+  paused    Boolean  @default(false)
+  pausedBy  String   @default("")
+  pausedAt  DateTime?
+  updatedAt DateTime @updatedAt
 }
 
 // Created by express-mysql-session at runtime (NOT managed by Prisma). Column

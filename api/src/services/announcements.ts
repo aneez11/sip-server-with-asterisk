@@ -237,6 +237,7 @@ export class AnnouncementService {
         startedAt: new Date(),
         title: a.name,
         durationSec: a.duration ?? null,
+        source: opts.music ? "music" : "manual",
       },
     });
     this.io.emit(EVENTS.broadcastUpdated, {
@@ -246,6 +247,7 @@ export class AnnouncementService {
       title: log.title,
       endpointIds,
       durationSec: log.durationSec,
+      source: opts.music ? "music" : "manual",
       startedAt: log.startedAt,
       endedAt: null,
     });
@@ -292,6 +294,7 @@ export class AnnouncementService {
         title: log.title,
         endpointIds,
         durationSec: log.durationSec,
+        source: opts.music ? "music" : "manual",
         startedAt: log.startedAt,
         endedAt,
       });

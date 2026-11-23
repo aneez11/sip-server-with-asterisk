@@ -20,6 +20,7 @@ import { MonitorPage } from "@/pages/MonitorPage/MonitorPage";
 import { CamerasPage } from "@/pages/CamerasPage/CamerasPage";
 import { PaGroupsPage } from "@/pages/PaGroupsPage/PaGroupsPage";
 import { MediaManagerPage } from "@/pages/MediaManagerPage/MediaManagerPage";
+import { BellsPage } from "@/pages/BellsPage/BellsPage";
 import { LoginPage } from "@/pages/LoginPage/LoginPage";
 
 const PAGES = {
@@ -32,6 +33,7 @@ const PAGES = {
   endpoints: EndpointsPage,
   zones: ZonesPage,
   "pa-group": PaGroupsPage,
+  bells: BellsPage,
   history: HistoryPage,
 };
 
@@ -82,6 +84,11 @@ export const App = () => {
       },
       onEndpointsChanged: () => void refresh(),
       onCallsUpdated: (snapshot) => useStore.getState().setCalls(snapshot),
+      onBellFired: (payload) => useStore.getState().onBellFired(payload),
+      onBellsChanged: () => {
+        if (useStore.getState().activeTab === "bells")
+          void useStore.getState().refreshBells();
+      },
       onConnectionChange: (connected) =>
         useStore.getState().onTalkConnectionChange(connected),
     });

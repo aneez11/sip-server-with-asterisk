@@ -2,7 +2,7 @@ import { type AmiClient, type AmiMessage } from "./client.js";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
 import type { Server as SocketServer } from "socket.io";
-import { EVENTS } from "@infinity/shared";
+import { EVENTS, type BroadcastSource } from "@infinity/shared";
 import { MonitorService } from "../live/monitor.js";
 import { activeTalkLogs } from "../live/talk-registry.js";
 
@@ -63,6 +63,10 @@ export class AmiListener {
    *  PA initiator (marked speaker) leaves a pa group's conference. */
   private onPaInitiatorLeft?: (pageConf: string) => void;
 
+  /** Wired after construction: copy the real delivery result into the bell
+   *  ledger once a log reaches a terminal status. */
+  private onLogFinalized?: (logId: number, status: string) => void;
+
   constructor(
     private readonly ami: AmiClient,
     private readonly io: SocketServer,
@@ -73,6 +77,12 @@ export class AmiListener {
 
   setPaInitiatorLeftHandler(fn: (pageConf: string) => void): void {
     this.onPaInitiatorLeft = fn;
+  }
+
+  /** Called with the terminal broadcast status (success | partial | failed |
+   *  stopped) from normal finalization and the orphan sweep. */
+  setLogFinalizedHandler(fn: (logId: number, status: string) => void): void {
+    this.onLogFinalized = fn;
   }
 
   private handle(msg: AmiMessage): void {
@@ -492,9 +502,11 @@ export class AmiListener {
           title: updated.title,
           endpointIds: updated.endpointIds,
           durationSec: updated.durationSec,
+          source: updated.source as BroadcastSource,
           startedAt: updated.startedAt,
           endedAt: updated.endedAt,
         });
+        this.onLogFinalized?.(updated.id, "stopped");
       }
     }
   }
@@ -545,10 +557,12 @@ export class AmiListener {
       title: updated.title,
       endpointIds: updated.endpointIds,
       durationSec: updated.durationSec,
+      source: updated.source as BroadcastSource,
       startedAt: updated.startedAt,
       endedAt: updated.endedAt,
     });
     this.stoppedLogIds.delete(page.logId);
+    this.onLogFinalized?.(updated.id, status);
   }
 
   /** Run frequently: finalize stuck pages + fail orphaned pending logs. */
@@ -593,9 +607,11 @@ export class AmiListener {
         title: log.title,
         endpointIds: log.endpointIds,
         durationSec: log.durationSec,
+        source: log.source as BroadcastSource,
         startedAt: log.startedAt,
         endedAt: new Date(),
       });
+      this.onLogFinalized?.(log.id, "failed");
     }
 
     if (Date.now() - this.lastFlashCleanup > 60_000) {

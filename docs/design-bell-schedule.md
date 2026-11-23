@@ -6,7 +6,12 @@ tones. Operators define bells once (time + weekdays + term range + targets) and
 the API fires them through the existing paging path — no dialplan changes and no
 new media pipeline.
 
-> **Status:** design only. Nothing below is implemented yet.
+> **Status:** Phase 1 (engine + API) and Phase 2 (Bells page) are implemented.
+> Phase 3 (templates) and Phase 4 (polish) remain unimplemented, as scoped below.
+> Templates and visual polish were explicitly deferred; the four open decisions
+> were confirmed with their documented defaults (flat bells before templates,
+> bell-specific beep/volume, no catch-up after downtime, rail placement before
+> History).
 
 Labels: **must** = required for the feature to count as shipped, **should** =
 expected, **may** = follow-up.

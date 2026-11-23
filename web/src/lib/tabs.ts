@@ -8,6 +8,7 @@ export const TAB_IDS = [
   "endpoints",
   "zones",
   "pa-group",
+  "bells",
   "history",
 ] as const;
 

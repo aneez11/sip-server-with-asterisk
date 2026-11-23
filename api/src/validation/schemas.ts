@@ -136,3 +136,123 @@ export const cameraTestSchema = z.object({
   username: z.string().max(120).optional(),
   password: z.string().max(200).optional(),
 });
+
+// ---- scheduled bells ------------------------------------------------------
+
+const localDateSchema = z
+  .string()
+  .trim()
+  .refine(
+    (v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v),
+    "Use YYYY-MM-DD",
+  );
+
+const dayListSchema = z
+  .array(z.coerce.number().int().min(1).max(7))
+  .min(1, "Select at least one weekday")
+  .max(7);
+
+/**
+ * 0-100 or null ("device default"). Deliberately NOT a union of
+ * `z.coerce.number()` and `z.null()`: zod tries union members in order and
+ * `z.coerce.number()` turns `null` into `0`, silently saving "device default"
+ * as a muted bell. Normalize first, then validate a single type.
+ */
+const volumeSchema = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : value;
+  },
+  z.number().int().min(0, "Volume must be 0-100").max(100, "Volume must be 0-100").nullable(),
+);
+
+/** Optional foreign key: absent and null both mean "none" (same trap as volume). */
+const optionalId = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(n) ? n : value;
+  },
+  z.number().int().positive("Select a valid item").nullable(),
+);
+
+const bellBaseSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  timeOfDay: z
+    .string()
+    .trim()
+    .regex(
+      /^([01]\d|2[0-3]):[0-5]\d$/,
+      "Time must be HH:MM (24-hour)",
+    ),
+  daysOfWeek: dayListSchema,
+  dateFrom: localDateSchema.default(""),
+  dateTo: localDateSchema.default(""),
+  enabled: z.boolean().default(true),
+  announcementId: optionalId,
+  beep: z.boolean().default(false),
+  volume: volumeSchema.optional().default(null),
+  zoneIds: z.array(z.coerce.number().int().positive()).default([]),
+  endpointIds: z.array(z.coerce.number().int().positive()).default([]),
+});
+
+const refineBell = (data: z.infer<typeof bellBaseSchema>, ctx: z.RefinementCtx) => {
+  if (data.dateFrom && data.dateTo && data.dateFrom > data.dateTo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dateTo"],
+      message: "End date must be on or after the start date",
+    });
+  }
+  if (data.zoneIds.length === 0 && data.endpointIds.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["zoneIds"],
+      message: "Select at least one zone or endpoint",
+    });
+  }
+};
+
+export const bellCreateSchema = bellBaseSchema.superRefine(refineBell);
+export const bellUpdateSchema = bellBaseSchema.superRefine(refineBell);
+
+/** Fast enable/disable toggle from the list — no rematerialize burst. */
+export const bellPatchSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export const bellPauseSchema = z.object({
+  paused: z.boolean(),
+  by: z.string().trim().max(120).optional(),
+});
+
+export const bellOccurrenceQuerySchema = z.object({
+  from: localDateSchema.optional(),
+  to: localDateSchema.optional(),
+  status: z.string().trim().max(40).optional(),
+  bellId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export const bellSkipCreateSchema = z.object({
+  date: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD"),
+  bellId: z.coerce.number().int().positive().nullable().optional(),
+  reason: z.string().trim().max(120).default(""),
+});
+
+export const bellSkipOccurrenceSchema = z.object({
+  reason: z.string().trim().max(120).default("manual"),
+});
+
+export const bellTestSchema = z.object({
+  /** Optional overrides so "Test" works on an unsaved form. */
+  announcementId: z.coerce.number().int().positive().optional(),
+  zoneIds: z.array(z.coerce.number().int().positive()).optional(),
+  endpointIds: z.array(z.coerce.number().int().positive()).optional(),
+  beep: z.boolean().optional(),
+  volume: volumeSchema.optional(),
+});

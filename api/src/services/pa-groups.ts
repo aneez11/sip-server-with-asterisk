@@ -203,6 +203,7 @@ export class PaGroupService {
         status: "pending",
         endpointIds: group.receivers.map((r) => r.endpointId),
         title,
+        source: "pa",
         startedAt: new Date(),
       },
     });

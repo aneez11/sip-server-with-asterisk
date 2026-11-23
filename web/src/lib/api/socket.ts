@@ -1,11 +1,20 @@
 import { io, type Socket } from 'socket.io-client';
-import { EVENTS, type BroadcastLog, type CallsSnapshot } from '@infinity/shared';
+import {
+  EVENTS,
+  type BellFiredPayload,
+  type BroadcastLog,
+  type CallsSnapshot,
+} from '@infinity/shared';
 
 export type SocketHandlers = {
   onBroadcastUpdated?: (log: BroadcastLog) => void;
   onEndpointsChanged?: () => void;
   onTalkAudio?: (talkId: string, pcm: Int16Array, rate: number) => void;
   onCallsUpdated?: (snapshot: CallsSnapshot) => void;
+  /** A scheduled bell fired (one broadcast log is now live). */
+  onBellFired?: (payload: BellFiredPayload) => void;
+  /** Bell CRUD/pause/skip changed the schedule — refetch. */
+  onBellsChanged?: () => void;
   /** Socket dropped (e.g. throttled background tab) or came back. */
   onConnectionChange?: (connected: boolean) => void;
 };
@@ -25,6 +34,8 @@ export function connectSocket(handlers: SocketHandlers): () => void {
   sock.on(EVENTS.broadcastUpdated, (log: BroadcastLog) => h.onBroadcastUpdated?.(log));
   sock.on(EVENTS.endpointsChanged, () => h.onEndpointsChanged?.());
   sock.on(EVENTS.callsUpdated, (snapshot: CallsSnapshot) => h.onCallsUpdated?.(snapshot));
+  sock.on(EVENTS.bellFired, (payload: BellFiredPayload) => h.onBellFired?.(payload));
+  sock.on(EVENTS.bellsChanged, () => h.onBellsChanged?.());
   sock.on('talk:audio', (payload: { talkId?: string; rate?: number; data?: ArrayBuffer }) => {
     if (payload?.talkId && payload?.data && payload?.rate) {
       h.onTalkAudio?.(payload.talkId, new Int16Array(payload.data), payload.rate);
@@ -44,6 +55,8 @@ export function connectSocket(handlers: SocketHandlers): () => void {
     sock.off(EVENTS.broadcastUpdated);
     sock.off(EVENTS.endpointsChanged);
     sock.off(EVENTS.callsUpdated);
+    sock.off(EVENTS.bellFired);
+    sock.off(EVENTS.bellsChanged);
     sock.off('talk:audio');
     sock.off('connect', onConnect);
     sock.off('disconnect', onDisconnect);

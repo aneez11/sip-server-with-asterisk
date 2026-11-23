@@ -20,7 +20,10 @@ entire console in Node.js + TypeScript with a React SPA.
 - **Endpoints:** CRUD for SIP extensions (phone/speaker), active toggle, auto-generated
   password (≤ 16 chars), config regen (`endpoints.conf`) + AMI reload.
 - **Zones:** named groups of endpoints.
-- **History:** broadcast logs with statuses (pending/success/partial/failed).
+- **History:** broadcast logs with statuses (pending/success/partial/failed), each
+  tagged with its origin (`source`: manual / bell / music / talk / pa).
+- **Scheduled bells:** wall-clock chimes (school periods, shift changes) fired by the
+  API through the same paging path as a broadcast. See `design-bell-schedule.md`.
 - **Live status:** registration state via AMI `PJSIPShowContacts`, pushed over Socket.IO.
 
 ## Non-goals
@@ -70,7 +73,9 @@ api ──fs──────▶ /etc/asterisk/endpoints.conf (shared mount) + 
 
 `User`, `Endpoint` (extension unique, type phone|speaker, isActive, sipPassword),
 `Zone`, `ZoneMember` (composite PK), `BroadcastLog` (status, zoneId?, endpointIds JSON,
-startedAt?, endedAt?), `Announcement` (filename, flash flag).
+source, startedAt?, endedAt?), `Announcement` (filename, flash flag), plus the bell
+ledger: `Bell`, `BellZone`, `BellEndpoint`, `BellOccurrence`, `BellSkip`, `BellSetting`
+(`BellTemplate`/`BellTemplateOverride` exist for Phase 3).
 
 ## Auth
 
@@ -81,4 +86,4 @@ All `/api/*` routes except login require the session. No registration.
 
 Web UI uses the shared SCSS design system (`web/src/styles/`), shell grid
 80/1fr/320 × 56/1fr/auto/44, icon rail: Broadcast / Media / Monitor / Cameras / Live talk
-/ Music / Endpoints / Zones / PA groups / History.
+/ Music / Endpoints / Zones / PA groups / Bells / History.

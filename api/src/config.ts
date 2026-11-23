@@ -61,6 +61,25 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((v) => v !== 'false' && v !== '0'),
+  // ---- scheduled bells (school chimes / shift bells) -----------------------
+  // Hard kill switch: when false the router answers 503 and the tick is a no-op.
+  BELL_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+  // IANA zone every wall-clock bell value is interpreted in. Nepal has no DST,
+  // but the math is zone-generic so it is not Nepal-only.
+  BELL_TIMEZONE: z.string().default('Asia/Kathmandu'),
+  // How far ahead occurrences are materialized.
+  BELL_HORIZON_DAYS: z.coerce.number().int().min(1).max(180).default(14),
+  // Dispatch tick period in milliseconds (15 s default).
+  BELL_TICK_MS: z.coerce.number().int().min(1000).max(300_000).default(15000),
+  // How long a bell waits for a busy zone before failing (never pre-empts).
+  BELL_BUSY_GRACE_SEC: z.coerce.number().int().min(0).max(3600).default(60),
+  // Ring late after downtime; 0 = mark missed instead of bursting chimes.
+  BELL_CATCHUP_SEC: z.coerce.number().int().min(0).max(86_400).default(0),
+  // Ledger pruning window.
+  BELL_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
 });
 
 const parsed = envSchema.parse(process.env);
@@ -106,6 +125,15 @@ export const config = {
     keyPath: parsed.TLS_KEY_PATH,
     caPath: parsed.TLS_CA_PATH,
     redirect: parsed.HTTPS_REDIRECT,
+  },
+  bell: {
+    enabled: parsed.BELL_ENABLED,
+    timezone: parsed.BELL_TIMEZONE,
+    horizonDays: parsed.BELL_HORIZON_DAYS,
+    tickMs: parsed.BELL_TICK_MS,
+    busyGraceSec: parsed.BELL_BUSY_GRACE_SEC,
+    catchupSec: parsed.BELL_CATCHUP_SEC,
+    retentionDays: parsed.BELL_RETENTION_DAYS,
   },
 };
 

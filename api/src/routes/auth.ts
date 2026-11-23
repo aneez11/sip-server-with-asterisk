@@ -14,6 +14,7 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(401, 'Invalid credentials');
     }
     req.session.userId = user.id;
+    req.session.displayName = user.displayName;
     // Await the write before responding: the client navigates (and re-requests
     // /api/auth/me) immediately after login, and an unawaited save can lose that
     // race against the MySQL session store, yielding a spurious 401.

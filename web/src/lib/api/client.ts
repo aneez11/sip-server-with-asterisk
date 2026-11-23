@@ -2,6 +2,11 @@ import type {
   Announcement,
   AuthResponse,
   AutoAnswerProfile,
+  Bell,
+  BellInput,
+  BellOccurrence,
+  BellSkipView,
+  BellStatusResponse,
   BroadcastLog,
   CallsSnapshot,
   Endpoint,
@@ -439,8 +444,7 @@ export const api = {
   },
 
   // Unified media index (announcements + music) for the Media Manager.
-  media: {
-    list: () => request<(Announcement & { music: boolean })[]>("/api/media"),
+  media: {    list: () => request<(Announcement & { music: boolean })[]>("/api/media"),
     upload: (file: File, flags: { broadcast: boolean; music: boolean }) => {
       const fd = new FormData();
       fd.append("file", file);
@@ -499,5 +503,80 @@ export const api = {
       }),
     remove: (id: number) =>
       request<void>(`/api/media/${id}`, { method: "DELETE" }),
+  },
+
+  // Scheduled bells. Wall-clock values are strings; the server owns the clock.
+  bells: {
+    list: () => request<Bell[]>("/api/bells"),
+    get: (id: number) => request<Bell>(`/api/bells/${id}`),
+    create: (body: BellInput) =>
+      request<Bell>("/api/bells", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    update: (id: number, body: BellInput) =>
+      request<Bell>(`/api/bells/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    /** Fast enable toggle; no materialize burst. */
+    setEnabled: (id: number, enabled: boolean) =>
+      request<Bell>(`/api/bells/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      }),
+    remove: (id: number) =>
+      request<void>(`/api/bells/${id}`, { method: "DELETE" }),
+    test: (id: number) =>
+      request<{ id: number }>(`/api/bells/${id}/test`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    testDraft: (body: {
+      announcementId: number;
+      zoneIds: number[];
+      endpointIds: number[];
+      beep: boolean;
+      volume: number | null;
+    }) =>
+      request<{ broadcastLogId: number }>("/api/bells/test", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    status: () => request<BellStatusResponse>("/api/bells/status"),
+    pause: (paused: boolean) =>
+      request<BellStatusResponse>("/api/bells/pause", {
+        method: "POST",
+        body: JSON.stringify({ paused }),
+      }),
+    occurrences: (query: {
+      from?: string;
+      to?: string;
+      status?: string;
+      bellId?: number;
+      limit?: number;
+    } = {}) => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined && value !== "") params.set(key, String(value));
+      }
+      const suffix = params.toString();
+      return request<BellOccurrence[]>(
+        `/api/bells/occurrences${suffix ? `?${suffix}` : ""}`,
+      );
+    },
+    skipOccurrence: (id: number, reason = "manual") =>
+      request<{ ok: boolean }>(`/api/bells/occurrences/${id}/skip`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    skips: () => request<BellSkipView[]>("/api/bells/skips"),
+    addSkip: (body: { date: string; bellId?: number | null; reason?: string }) =>
+      request<BellSkipView>("/api/bells/skips", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    removeSkip: (id: number) =>
+      request<void>(`/api/bells/skips/${id}`, { method: "DELETE" }),
   },
 };

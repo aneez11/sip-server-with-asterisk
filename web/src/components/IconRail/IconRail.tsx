@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   Activity,
+  BellRing,
   History,
   Layers,
   Cctv,
@@ -25,6 +26,7 @@ const links: { tab: Tab; icon: LucideIcon; label: string }[] = [
   { tab: "endpoints", icon: Phone, label: "Endpoints" },
   { tab: "zones", icon: Layers, label: "Zones" },
   { tab: "pa-group", icon: Users, label: "PA groups" },
+  { tab: "bells", icon: BellRing, label: "Bells" },
   { tab: "history", icon: History, label: "History" },
 ];
 

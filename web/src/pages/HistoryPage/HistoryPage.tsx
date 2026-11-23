@@ -1,4 +1,4 @@
-import { Radio } from 'lucide-react';
+import { BellRing, Radio } from 'lucide-react';
 import { useStore } from '@/store';
 import { ScreenHeader } from '@/components/ScreenHeader/ScreenHeader';
 
@@ -18,6 +18,21 @@ const statusTone = (status: string) =>
       : status === 'stopped'
         ? 'quiet'
         : 'outline';
+
+const sourceLabel = (source?: string) => {
+  switch (source) {
+    case 'bell':
+      return 'Bell';
+    case 'music':
+      return 'Music';
+    case 'talk':
+      return 'Live talk';
+    case 'pa':
+      return 'PA group';
+    default:
+      return null;
+  }
+};
 
 export const HistoryPage = () => {
   const recentLogs = useStore((s) => s.recentLogs);
@@ -46,11 +61,20 @@ export const HistoryPage = () => {
               (id) => endpoints.find((e) => e.id === id)?.label ?? `#${id}`,
             );
             const count = b.endpointIds?.length ?? 0;
+            const source = sourceLabel(b.source);
             return (
               <article key={b.id} className="history-card">
                 <div className="history-card-head">
                   <span className="mono history-card-time">{fmtClock(b.startedAt)}</span>
-                  <span className={`chip ${statusTone(b.status)}`}>{b.status}</span>
+                  <span className="inline" style={{ gap: 4 }}>
+                    {source ? (
+                      <span className="chip outline">
+                        {b.source === 'bell' ? <BellRing size={9} /> : null}
+                        {source}
+                      </span>
+                    ) : null}
+                    <span className={`chip ${statusTone(b.status)}`}>{b.status}</span>
+                  </span>
                 </div>
 
                 <b className="history-card-title" title={b.title || b.zoneName || 'Ad-hoc'}>

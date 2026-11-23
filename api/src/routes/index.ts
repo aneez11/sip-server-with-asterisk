@@ -912,6 +912,7 @@ export function createStatusRouter(
           title: l.title ?? "",
           endpointIds: (l.endpointIds as number[]) ?? [],
           durationSec: l.durationSec ?? null,
+          source: l.source ?? "manual",
           startedAt: l.startedAt?.toISOString() ?? null,
           endedAt: l.endedAt?.toISOString() ?? null,
         })),

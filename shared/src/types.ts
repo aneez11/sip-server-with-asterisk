@@ -70,6 +70,8 @@ export type BroadcastStatus =
   | "failed"
   | "stopped";
 
+export type BroadcastSource = "manual" | "bell" | "music" | "talk" | "pa";
+
 export interface BroadcastLog {
   id: number;
   status: BroadcastStatus;
@@ -78,6 +80,7 @@ export interface BroadcastLog {
   title: string;
   endpointIds: number[];
   durationSec?: number | null;
+  source?: BroadcastSource;
   startedAt: string | null;
   endedAt: string | null;
 }
@@ -223,6 +226,108 @@ export interface TalkStartResponse {
   broadcastLogId: number;
 }
 
+// ---- scheduled bells (school chimes / shift bells) ------------------------
+
+export type BellOccurrenceStatus =
+  | "scheduled"
+  | "firing"
+  | "fired"
+  | "skipped"
+  | "missed"
+  | "failed";
+
+/** A bell as shown on the page: schedule + resolved targets + next fire. */
+export interface Bell {
+  id: number;
+  name: string;
+  /** Wall-clock "HH:MM" in the site timezone. */
+  timeOfDay: string;
+  /** ISO weekdays 1=Mon .. 7=Sun. */
+  daysOfWeek: number[];
+  /** Inclusive local term window ("YYYY-MM-DD"); "" = unbounded. */
+  dateFrom: string;
+  dateTo: string;
+  enabled: boolean;
+  announcementId: number | null;
+  announcementName: string | null;
+  beep: boolean;
+  volume: number | null;
+  zoneIds: number[];
+  zoneNames: string[];
+  endpointIds: number[];
+  /** Next scheduled occurrence (UTC ISO) from the ledger, if any. */
+  nextAt: string | null;
+  /** Status of today's occurrence for this bell, if one was materialized. */
+  todayStatus: BellOccurrenceStatus | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface BellInput {
+  name: string;
+  timeOfDay: string;
+  daysOfWeek: number[];
+  dateFrom: string;
+  dateTo: string;
+  enabled: boolean;
+  announcementId: number | null;
+  beep: boolean;
+  volume: number | null;
+  zoneIds: number[];
+  endpointIds: number[];
+}
+
+export interface BellOccurrence {
+  id: number;
+  bellId: number;
+  bellName: string;
+  scheduledAt: string;
+  localDate: string;
+  localMinute: string;
+  status: BellOccurrenceStatus;
+  reason: string;
+  resultStatus: string;
+  broadcastLogId: number | null;
+  firedAt: string | null;
+}
+
+export interface BellStatusResponse {
+  enabled: boolean;
+  paused: boolean;
+  pausedBy: string;
+  pausedAt: string | null;
+  timezone: string;
+  serverTime: string;
+  /** Difference between the host clock and the requested instant (seconds). */
+  clockDriftSec: number;
+  next: Array<{
+    occurrenceId: number;
+    bellId: number;
+    bellName: string;
+    scheduledAt: string;
+    localDate: string;
+    localMinute: string;
+  }>;
+}
+
+export interface BellSkipView {
+  id: number;
+  date: string;
+  bellId: number | null;
+  bellName: string | null;
+  reason: string;
+}
+
+export interface BellFiredPayload {
+  occurrenceId: number;
+  bellId: number;
+  bellName: string;
+  broadcastLogId: number;
+  localDate: string;
+  localMinute: string;
+  scheduledAt: string;
+}
+
 // ---- WebSocket events ------------------------------------------------------
 
 export interface CodecNegotiatedPayload {
@@ -238,7 +343,9 @@ export type SocketEvent =
   | { type: "broadcast.updated"; log: BroadcastLog }
   | { type: "talk.played"; broadcastLogId: number }
   | { type: "endpoints.changed" }
-  | { type: "codec.negotiated"; data: CodecNegotiatedPayload };
+  | { type: "codec.negotiated"; data: CodecNegotiatedPayload }
+  | { type: "bell.fired"; data: BellFiredPayload }
+  | { type: "bells.changed" };
 
 // ---- live monitor (active calls) --------------------------------------------
 
@@ -277,4 +384,6 @@ export const EVENTS = {
   endpointsChanged: "endpoints.changed",
   codecNegotiated: "codec:negotiated",
   callsUpdated: "calls.updated",
+  bellFired: "bell.fired",
+  bellsChanged: "bells.changed",
 } as const;

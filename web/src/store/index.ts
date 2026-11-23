@@ -3,6 +3,12 @@ import toast from "react-hot-toast";
 import type {
   Announcement,
   AutoAnswerProfile,
+  Bell,
+  BellFiredPayload,
+  BellInput,
+  BellOccurrence,
+  BellSkipView,
+  BellStatusResponse,
   BroadcastLog,
   CallsSnapshot,
   Endpoint,
@@ -37,6 +43,10 @@ interface StoreState {
   contextOpen: boolean;
   /** Live active calls snapshot (Monitor dashboard). */
   calls: CallsSnapshot | null;
+  /** Scheduled bells (loaded when the Bells tab opens). */
+  bells: Bell[];
+  bellStatus: BellStatusResponse | null;
+  bellSkips: BellSkipView[];
   selectedZoneIds: Set<number>;
   recording: boolean;
   activeTalkId: string | null;
@@ -167,6 +177,7 @@ interface StoreState {
     paEndAnnouncementId: number | null;
     receiverEndpointIds: number[];
   }) => Promise<void>;
+
   updatePaGroup: (
     id: number,
     data: Partial<{
@@ -179,6 +190,34 @@ interface StoreState {
     }>,
   ) => Promise<void>;
   removePaGroup: (id: number) => Promise<void>;
+
+  // ---- scheduled bells ----
+  loadBells: () => Promise<void>;
+  refreshBells: () => Promise<void>;
+  loadOccurrences: (query?: {
+    from?: string;
+    to?: string;
+    bellId?: number;
+    status?: string;
+    limit?: number;
+  }) => Promise<BellOccurrence[]>;
+  createBell: (input: BellInput) => Promise<boolean>;
+  updateBell: (id: number, input: BellInput) => Promise<boolean>;
+  setBellEnabled: (id: number, enabled: boolean) => Promise<void>;
+  removeBell: (id: number) => Promise<void>;
+  testBell: (id: number) => Promise<void>;
+  testBellDraft: (input: {
+    announcementId: number;
+    zoneIds: number[];
+    endpointIds: number[];
+    beep: boolean;
+    volume: number | null;
+  }) => Promise<void>;
+  pauseBells: (paused: boolean) => Promise<void>;
+  skipOccurrence: (id: number, reason?: string) => Promise<void>;
+  addBellSkip: (input: { date: string; bellId?: number | null; reason?: string }) => Promise<void>;
+  removeBellSkip: (id: number) => Promise<void>;
+  onBellFired: (payload: BellFiredPayload) => void;
 }
 
 export const useStore = create<StoreState>((set, get) => {
@@ -210,6 +249,7 @@ export const useStore = create<StoreState>((set, get) => {
         title: log.title ?? previous?.title ?? "Broadcast",
         endpointIds: log.endpointIds ?? previous?.endpointIds ?? [],
         durationSec: log.durationSec ?? previous?.durationSec ?? null,
+        source: log.source ?? previous?.source ?? "manual",
         startedAt: log.startedAt ?? previous?.startedAt ?? null,
         endedAt: log.endedAt ?? previous?.endedAt ?? null,
       };
@@ -241,6 +281,9 @@ export const useStore = create<StoreState>((set, get) => {
     activeTab: "broadcast",
     contextOpen: false,
     calls: null,
+    bells: [],
+    bellStatus: null,
+    bellSkips: [],
     selectedZoneIds: new Set(),
     recording: false,
     activeTalkId: null,
@@ -879,6 +922,140 @@ export const useStore = create<StoreState>((set, get) => {
       } catch (e) {
         addToast((e as Error).message);
       }
+    },
+
+    // ---- scheduled bells ----
+    loadBells: async () => {
+      try {
+        const [bells, status, skips] = await Promise.all([
+          api.bells.list(),
+          api.bells.status().catch(() => null),
+          api.bells.skips(),
+        ]);
+        set({ bells, bellStatus: status, bellSkips: skips });
+      } catch (e) {
+        // BELL_ENABLED=false answers 503: the feature ships dark, not broken.
+        if (e instanceof ApiError && e.status === 503) {
+          set({
+            bells: [],
+            bellStatus: null,
+            bellSkips: [],
+          });
+          return;
+        }
+        addToast((e as Error).message);
+      }
+    },
+    refreshBells: async () => {
+      try {
+        const [bells, status, skips] = await Promise.all([
+          api.bells.list(),
+          api.bells.status().catch(() => null),
+          api.bells.skips(),
+        ]);
+        set({ bells, bellStatus: status, bellSkips: skips });
+      } catch {
+        /* keep last known schedule on a transient failure */
+      }
+    },
+    loadOccurrences: (query) => api.bells.occurrences(query),
+    createBell: async (input) => {
+      try {
+        await api.bells.create(input);
+        await get().refreshBells();
+        addToast("Bell scheduled", "success");
+        return true;
+      } catch (e) {
+        addToast((e as Error).message);
+        return false;
+      }
+    },
+    updateBell: async (id, input) => {
+      try {
+        await api.bells.update(id, input);
+        await get().refreshBells();
+        addToast("Bell updated", "success");
+        return true;
+      } catch (e) {
+        addToast((e as Error).message);
+        return false;
+      }
+    },
+    setBellEnabled: async (id, enabled) => {
+      set((s) => ({
+        bells: s.bells.map((b) => (b.id === id ? { ...b, enabled } : b)),
+      }));
+      try {
+        await api.bells.setEnabled(id, enabled);
+        await get().refreshBells();
+      } catch (e) {
+        addToast((e as Error).message);
+        await get().refreshBells();
+      }
+    },
+    removeBell: async (id) => {
+      try {
+        await api.bells.remove(id);
+        await get().refreshBells();
+        addToast("Bell removed", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    testBell: async (id) => {
+      try {
+        await api.bells.test(id);
+        addToast("Test bell sent", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    testBellDraft: async (input) => {
+      try {
+        await api.bells.testDraft(input);
+        addToast("Test bell sent", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    pauseBells: async (paused) => {
+      try {
+        const status = await api.bells.pause(paused);
+        set({ bellStatus: status });
+        await get().refreshBells();
+        addToast(paused ? "All bells paused" : "Bells resumed", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    skipOccurrence: async (id, reason = "manual") => {
+      try {
+        await api.bells.skipOccurrence(id, reason);
+        await get().refreshBells();
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    addBellSkip: async (input) => {
+      try {
+        await api.bells.addSkip(input);
+        await get().refreshBells();
+        addToast("Date skipped", "success");
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    removeBellSkip: async (id) => {
+      try {
+        await api.bells.removeSkip(id);
+        await get().refreshBells();
+      } catch (e) {
+        addToast((e as Error).message);
+      }
+    },
+    onBellFired: (payload) => {
+      addToast(`${payload.bellName} rang (${payload.localMinute})`, "success");
+      void get().refreshBells();
     },
   };
 });
